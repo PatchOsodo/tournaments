@@ -1,28 +1,40 @@
 /**
  * =============================================================================
  * BASKETBALL TOURNAMENT MANAGER — main.js
- * Version : 4.2.0
+ * Version : 5.0.0
  *
- * CHANGES FROM v4.1
- * ---------------
- * BUG FIX 1 — genElimination() round 1 loop:
- *   nextSlot was computed as `i % 4 === 0 ? 'home' : 'away'` where i is the
- *   slot index (0,2,4,6…). This caused slots 0 and 4 to both map to 'home',
- *   breaking bye seeding for any bracket larger than 4 slots.
- *   Fixed to: `matchNumber % 2 === 1 ? 'home' : 'away'` using the 1-indexed
- *   match number, which correctly alternates home/away per match pair.
+ * NEW IN v5.0.0 — TOURNAMENT CATEGORIES / EVENTS
+ * ───────────────────────────────────────────────
+ * A tournament "event" (e.g. "JBB 2025") can now contain multiple categories
+ * (e.g. "U13 Boys", "U15 Girls", "U17 Boys"). Each category is a fully
+ * independent tournament with its own teams, format, fixtures, and results.
  *
- * BUG FIX 2 — genElimination() round 1 loop:
- *   nextMatchNumber was `Math.floor(i/2)+1` which happened to produce the same
- *   result as the correct formula but expressed wrong intent. Replaced with the
- *   canonical `Math.ceil(matchNumber/2)` for clarity and correctness.
+ * REQUIRED POCKETBASE SCHEMA CHANGE (one-time):
+ *   → Open admin dashboard → tournaments collection → New field:
+ *       Name : event_name
+ *       Type : Text
+ *       Required : NO  (leave unchecked)
+ *   Save the collection. That is the only change needed.
  *
- * BUG FIX 3 — _persistFixtures() group_stage knockout block:
- *   Knockout fixture round numbers were stored as `roundOffset + round.roundNumber`
- *   where round.roundNumber is already 1-indexed within the knockout sub-bracket.
- *   This double-counted the offset, causing knockout fixtures to receive round
- *   numbers that didn't match what advanceWinnerElimination searched for.
- *   Fixed to: `roundOffset + ri + 1` (sequential index into knockout rounds).
+ * WHAT CHANGED:
+ *   - DB.createTournament() accepts optional event_name
+ *   - DB.getEvents() — new: returns distinct event names from the DB
+ *   - App.loadTournaments() — home screen now groups by event_name
+ *   - App.goToSetup() — injects event-name input into setup card on first run
+ *   - App.goToSetupForEvent(name) — new: opens setup pre-filled with event name
+ *   - App.goToNames() — reads event-name input
+ *   - App.generateFixtures() — passes event_name to createTournament
+ *   - App._renderEventGroup() — new: renders an event header + its categories
+ *   - App._renderTournamentItem() — new: renders a single tournament row
+ *
+ * CARRIED OVER FROM v4.2.0:
+ *   - genElimination nextSlot / nextMatchNumber fix
+ *   - _persistFixtures group_stage knockout round numbering fix
+ *   - _computeGroupStandings derives teams from fixtures (not team.group_name)
+ *   - seedKnockoutFromGroups: internal completion guard, cross-seeding
+ *   - migrateExistingTournaments: repairs old broken tournaments on init
+ *   - repairNextFixture: verifies winner advancement after each save
+ *   - isBracketMatch: group_stage knockout fixtures advance correctly
  *
  * TABLE OF CONTENTS
  * -----------------
@@ -34,22 +46,21 @@
  * 6.  Format Configuration & suggestFormat
  * 7.  Fixture Generation Algorithms
  *       7a. Round Robin
- *       7b. Single Elimination  ← FIXED (nextSlot, nextMatchNumber)
+ *       7b. Single Elimination
  *       7c. Group Stage
  * 8.  Database Layer (DB)
- *       advanceWinnerElimination
- *       clearAdvancedWinner
- * 9.  App Controller
- *       9a. Initialisation
- *       9b. Home Screen
- *       9c. Setup Screen
- *       9d. Names Screen
- *       9e. Fixture Generation & Persistence  ← FIXED (knockout round numbering)
- *       9f. Fixtures Screen / Render Helpers
- *       9g. Score Entry (new + edit)
- * 10. Helpers
- * 11. Global Error Handlers
- * 12. Boot
+ * 9.  Migration (repairs old broken data on init)
+ * 10. App Controller
+ *       10a. Initialisation
+ *       10b. Home Screen          ← UPDATED (event grouping)
+ *       10c. Setup Screen         ← UPDATED (event-name field injected)
+ *       10d. Names Screen
+ *       10e. Fixture Generation & Persistence
+ *       10f. Fixtures Screen / Render Helpers
+ *       10g. Score Entry (new + edit)
+ * 11. Helpers
+ * 12. Global Error Handlers
+ * 13. Boot
  * =============================================================================
  */
 
@@ -58,15 +69,11 @@
    ============================================================================= */
 const CONFIG = {
   API_BASE_URL : window.location.origin,
-  VERSION      : '4.2.0',
+  VERSION      : '5.0.0',
 };
 
 /* =============================================================================
    2. LOGGER
-   Writes to both the browser console and the in-page debug log panel.
-
-   Usage:
-     Logger.info('message', { optional: 'context' });
    ============================================================================= */
 const Logger = (() => {
   const entries = [];
@@ -119,7 +126,6 @@ const pb = new PocketBase(CONFIG.API_BASE_URL);
 
 /* =============================================================================
    4. UI HELPERS
-   Pure DOM utilities — no business logic.
    ============================================================================= */
 const UI = {
 
@@ -216,10 +222,11 @@ const State = {
   fixtures         : [],
   teams            : [],
   setupData        : {
-    teamCount : 8,
-    format    : 'elimination',
-    name      : '',
-    names     : [],
+    teamCount    : 8,
+    format       : 'elimination',
+    name         : '',        // category / tournament name
+    eventName    : '',        // NEW: parent event name (e.g. "JBB 2025")
+    names        : [],
   },
 };
 
@@ -240,15 +247,9 @@ function suggestFormat(n) {
 
 /* =============================================================================
    7. FIXTURE GENERATION ALGORITHMS
-   Pure functions — no DB calls, no side effects.
    ============================================================================= */
 
-/* -----------------------------------------------------------------------------
-   7a. ROUND ROBIN — circle rotation method (unchanged)
-
-   Every team plays every other team once.
-   Odd team counts get a synthetic BYE to keep pairs even.
-   ----------------------------------------------------------------------------- */
+/* 7a. ROUND ROBIN ------------------------------------------------------------ */
 function genRoundRobin(teams) {
   Logger.debug('genRoundRobin', { count: teams.length });
   const list  = teams.length % 2 === 1 ? [...teams, 'BYE'] : [...teams];
@@ -262,7 +263,7 @@ function genRoundRobin(teams) {
       if (a !== 'BYE' && b !== 'BYE') matches.push({ a, b, isBye: false });
     }
     if (matches.length) rounds.push({ label: `Round ${r + 1}`, matches });
-    list.splice(1, 0, list.pop()); // rotate keeping position 0 fixed
+    list.splice(1, 0, list.pop());
   }
 
   const totalMatches = rounds.reduce((s, r) => s + r.matches.length, 0);
@@ -270,58 +271,16 @@ function genRoundRobin(teams) {
   return { type: 'round_robin', rounds, totalMatches };
 }
 
-/* -----------------------------------------------------------------------------
-   7b. SINGLE ELIMINATION — fixed-slot seed tree
-
-   APPROACH
-   ────────
-   We build the bracket as a complete binary tree of size (next power of 2).
-   Teams are placed into leaf slots 1..size. Slots beyond the real team count
-   are BYE slots.
-
-   A "BYE match" in round 1 is a match where one competitor is a BYE.
-   The real team is the automatic winner and will be seeded directly into
-   round 2 during persistence (see _persistFixtures). The bye match itself
-   IS persisted as is_bye=true so the bracket renders correctly.
-
-   Round-label naming follows standard tournament convention:
-     Final, Semifinals, Quarterfinals, Round of 16, Round of 32 …
-
-   SLOT → NEXT-ROUND MAPPING
-   ──────────────────────────
-   Match number M in round R feeds into match ceil(M/2) in round R+1.
-   Odd M fills home_team; even M fills away_team.
-   This mapping is deterministic and stored in each match object so
-   DB.advanceWinnerElimination can look it up without recalculating.
-
-   EXAMPLE — 6 teams (padded to 8, 2 byes)
-   ──────────────────────────────────────────
-   Round 1 (Round of 8):
-     M1: Team1 vs Team2      → winner goes to R2 M1 home
-     M2: Team3 vs Team4      → winner goes to R2 M1 away
-     M3: Team5 vs BYE        → Team5 auto-advances to R2 M2 home
-     M4: Team6 vs BYE        → Team6 auto-advances to R2 M2 away
-
-   Round 2 (Semifinals):
-     M1: [W:R1M1] vs [W:R1M2]   → winner to Final home
-     M2: Team5    vs Team6       → winner to Final away
-
-   Round 3 (Final):
-     M1: [W:R2M1] vs [W:R2M2]
-   ----------------------------------------------------------------------------- */
+/* 7b. SINGLE ELIMINATION ---------------------------------------------------- */
 function genElimination(teams) {
   Logger.debug('genElimination', { count: teams.length });
 
-  // Step 1: pad to next power of 2
   let size = 1;
   while (size < teams.length) size *= 2;
   const byes = size - teams.length;
   Logger.info('genElimination bracket size', { teams: teams.length, size, byes });
 
-  // Step 2: fill slots — real teams first, then BYEs at the end
-  const slots = [...teams, ...Array(byes).fill('BYE')];
-
-  // Step 3: build round 1 from adjacent pairs of slots
+  const slots       = [...teams, ...Array(byes).fill('BYE')];
   const totalRounds = Math.log2(size);
   const allRounds   = [];
 
@@ -330,16 +289,13 @@ function genElimination(teams) {
     const a           = slots[i];
     const b           = slots[i + 1];
     const isBye       = b === 'BYE';
-    const matchNumber = Math.floor(i / 2) + 1;  // 1-indexed match number
+    const matchNumber = Math.floor(i / 2) + 1;
 
     round1Matches.push({
       a,
       b,
       isBye,
       nextRound       : 2,
-      // FIX 1 & 2: use matchNumber (not slot index i) for both nextMatchNumber
-      // and nextSlot. Previously `i % 4 === 0` caused slots 0 and 4 to both
-      // resolve to 'home', breaking bye seeding on brackets larger than 4 slots.
       nextMatchNumber : Math.ceil(matchNumber / 2),
       nextSlot        : matchNumber % 2 === 1 ? 'home' : 'away',
     });
@@ -348,8 +304,7 @@ function genElimination(teams) {
   const r1Label = _roundLabel(round1Matches.length, totalRounds, 1);
   allRounds.push({ roundNumber: 1, label: r1Label, matches: round1Matches });
 
-  // Step 4: build subsequent rounds as all-TBD placeholders
-  let matchCount = size / 2;  // round 1 match count
+  let matchCount = size / 2;
   for (let r = 2; r <= totalRounds; r++) {
     matchCount = matchCount / 2;
     const matches = [];
@@ -371,69 +326,41 @@ function genElimination(teams) {
     allRounds.slice(1).reduce((s, r) => s + r.matches.length, 0);
 
   Logger.info('genElimination done', {
-    size,
-    byes,
-    rounds        : allRounds.length,
+    size, byes,
+    rounds       : allRounds.length,
     totalMatches,
-    byeMatches    : round1Matches.filter(m => m.isBye).length,
-    roundSummary  : allRounds.map(r => `${r.label}: ${r.matches.length} matches`),
+    roundSummary : allRounds.map(r => `${r.label}: ${r.matches.length} matches`),
   });
 
   return { type: 'elimination', rounds: allRounds, totalMatches };
 }
 
-/**
- * Derive the display label for a round.
- * @param {number} matchCount    - Number of matches in this round
- * @param {number} totalRounds   - Total rounds in the bracket
- * @param {number} roundNumber   - 1-indexed round number
- */
 function _roundLabel(matchCount, totalRounds, roundNumber) {
-  const fromEnd = totalRounds - roundNumber + 1; // 1 = final, 2 = semis, etc.
+  const fromEnd = totalRounds - roundNumber + 1;
   if (fromEnd === 1) return 'Final';
   if (fromEnd === 2) return 'Semifinals';
   if (fromEnd === 3) return 'Quarterfinals';
   return `Round of ${matchCount * 2}`;
 }
 
-/* -----------------------------------------------------------------------------
-   7c. GROUP STAGE
-
-   Groups are formed by interleaving teams (snake-style distribution).
-   Round robin is run within each group.
-
-   ADVANCEMENT (NBA-style tiebreaker):
-     1. Most wins
-     2. If tied → best point differential (points scored − points conceded)
-
-   The top 2 from each group advance to a single elimination knockout.
-   Standings are computed here for logging; live standings during a tournament
-   are computed from actual fixture results in _computeGroupStandings().
-   ----------------------------------------------------------------------------- */
+/* 7c. GROUP STAGE ----------------------------------------------------------- */
 function genGroupStage(teams) {
   Logger.debug('genGroupStage', { count: teams.length });
   const numGroups = teams.length <= 8 ? 2 : teams.length <= 12 ? 3 : 4;
   const groups    = Array.from({ length: numGroups }, () => []);
-
-  // Snake distribution: 0→A, 1→B, 2→C, 3→B, 4→A … gives balanced groups
   teams.forEach((t, i) => groups[i % numGroups].push(t));
 
   Logger.info('Groups formed', { numGroups, sizes: groups.map(g => g.length) });
 
-  const letters      = 'ABCDEFGH';
+  const letters       = 'ABCDEFGH';
   const groupFixtures = groups.map((g, gi) => ({
     name   : `Group ${letters[gi]}`,
     teams  : g,
     rounds : genRoundRobin(g).rounds,
   }));
 
-  // For generation purposes the top 2 per group are the first 2 teams
-  // (seeding order). Actual progression is determined by live results
-  // in App._computeGroupStandings() when results are entered.
   const advancers = groups.map(g => g.slice(0, 2)).flat();
-  Logger.debug('Initial knockout seeds (pre-play)', { advancers });
-
-  const knockout = genElimination(advancers);
+  const knockout  = genElimination(advancers);
 
   const totalGroupMatches = groupFixtures.reduce(
     (s, g) => s + g.rounds.reduce((rs, r) => rs + r.matches.length, 0), 0
@@ -446,25 +373,10 @@ function genGroupStage(teams) {
 
 /**
  * Compute live group standings from fixture results.
- *
- * IMPORTANT: Team IDs are derived directly from the fixture records
- * (not from the teams collection's group_name field) so this works even
- * if the group_name field is missing or misconfigured on team records.
- *
- * RANKING CRITERIA (in order):
- *   1. Wins (descending)
- *   2. Point differential: (pts scored − pts conceded) (descending)
- *   3. Points scored (descending) — final tiebreaker
- *
- * @param {Array}  fixtures  - All fixtures for the tournament (with expand)
- * @param {Array}  teams     - All team records (used only for name lookup)
- * @param {string} groupName - Full group name e.g. 'Group A'
- * @returns {Array} sorted standing objects: [{ teamId, name, wins, losses, ptsFor, ptsAgainst, pointDiff }]
+ * Derives team IDs from fixture records directly (not from team.group_name).
  */
 function _computeGroupStandings(fixtures, teams, groupName) {
-  // Get all fixtures (complete or not) for this group to find which teams are in it
   const allGroupFx = fixtures.filter(f => f.group_name === groupName && !f.is_bye);
-
   if (!allGroupFx.length) {
     Logger.warn('_computeGroupStandings: no fixtures found for group', { groupName });
     return [];
@@ -484,9 +396,6 @@ function _computeGroupStandings(fixtures, teams, groupName) {
     if (aId) teamIdsInGroup.add(aId);
   });
 
-  Logger.debug('_computeGroupStandings: teams in group', { groupName, count: teamIdsInGroup.size });
-
-  // Build standings map keyed by team ID
   const standingsMap = {};
   teamIdsInGroup.forEach(id => {
     const teamRecord = teams.find(t => t.id === id);
@@ -502,17 +411,12 @@ function _computeGroupStandings(fixtures, teams, groupName) {
     };
   });
 
-  // Accumulate only completed fixtures
-  const completedFx = allGroupFx.filter(f => f.status === 'completed');
-  completedFx.forEach(f => {
+  allGroupFx.filter(f => f.status === 'completed').forEach(f => {
     const homeId = resolveId(f.home_team);
     const awayId = resolveId(f.away_team);
     const home   = standingsMap[homeId];
     const away   = standingsMap[awayId];
-    if (!home || !away) {
-      Logger.warn('_computeGroupStandings: team not in standingsMap', { homeId, awayId });
-      return;
-    }
+    if (!home || !away) return;
 
     home.played++;    away.played++;
     home.ptsFor    += (f.home_score || 0);   home.ptsAgainst += (f.away_score || 0);
@@ -525,23 +429,15 @@ function _computeGroupStandings(fixtures, teams, groupName) {
     }
   });
 
-  const sorted = Object.values(standingsMap).sort((a, b) => {
+  return Object.values(standingsMap).sort((a, b) => {
     if (b.wins !== a.wins)           return b.wins - a.wins;
     if (b.pointDiff !== a.pointDiff) return b.pointDiff - a.pointDiff;
     return b.ptsFor - a.ptsFor;
   });
-
-  Logger.debug('_computeGroupStandings result', {
-    groupName,
-    standings: sorted.map(s => `${s.name} W:${s.wins} PD:${s.pointDiff}`),
-  });
-
-  return sorted;
 }
 
 /* =============================================================================
    8. DATABASE LAYER
-   All PocketBase REST calls are centralised here.
    ============================================================================= */
 const DB = {
 
@@ -556,13 +452,45 @@ const DB = {
     }
   },
 
+  /** Fetch all tournaments, newest first. */
   async getTournaments() {
     return pb.collection('tournaments').getFullList({ sort: '-created' });
   },
 
-  async createTournament(name, format) {
-    Logger.info('DB.createTournament', { name, format });
-    return pb.collection('tournaments').create({ name, format, status: 'pending' });
+  /**
+   * NEW: Return a sorted, deduplicated list of existing event names.
+   * Used to populate the autocomplete datalist on the setup screen.
+   */
+  async getEvents() {
+    try {
+      const all = await pb.collection('tournaments').getFullList({
+        fields: 'event_name',
+      });
+      const names = [...new Set(
+        all.map(t => t.event_name).filter(Boolean)
+      )].sort();
+      Logger.debug('DB.getEvents', { count: names.length, names });
+      return names;
+    } catch (e) {
+      Logger.warn('DB.getEvents failed', { error: e.message });
+      return [];
+    }
+  },
+
+  /**
+   * Create a tournament record.
+   * @param {string}      name       - Category / tournament name
+   * @param {string}      format     - round_robin | elimination | group_stage
+   * @param {string|null} eventName  - NEW: parent event name (optional)
+   */
+  async createTournament(name, format, eventName = null) {
+    Logger.info('DB.createTournament', { name, format, eventName });
+    return pb.collection('tournaments').create({
+      name,
+      format,
+      status     : 'pending',
+      event_name : eventName || null,
+    });
   },
 
   async updateTournament(id, data) {
@@ -612,20 +540,6 @@ const DB = {
     });
   },
 
-  /**
-   * After a result is saved, place the winner into the correct slot of the
-   * next-round fixture.
-   *
-   * SLOT MAPPING:
-   *   Match number M in round R:
-   *     Odd  M → home_team slot of match ceil(M/2) in round R+1
-   *     Even M → away_team slot of match ceil(M/2) in round R+1
-   *
-   * @param {string} tournamentId
-   * @param {number} currentRound       - 1-indexed round number
-   * @param {number} currentMatchNumber - 1-indexed match number within round
-   * @param {string} winnerTeamId
-   */
   async advanceWinnerElimination(tournamentId, currentRound, currentMatchNumber, winnerTeamId) {
     const nextRound       = currentRound + 1;
     const nextMatchNumber = Math.ceil(currentMatchNumber / 2);
@@ -642,7 +556,7 @@ const DB = {
         filter: `tournament = "${tournamentId}" && round = ${nextRound} && match_number = ${nextMatchNumber}`,
       });
       if (!nextFx.length) {
-        Logger.warn('advanceWinner: no next fixture (this may be the final)', { nextRound, nextMatchNumber });
+        Logger.warn('advanceWinner: no next fixture (may be the final)', { nextRound, nextMatchNumber });
         return;
       }
       await pb.collection('fixtures').update(nextFx[0].id, { [slot]: winnerTeamId });
@@ -652,11 +566,6 @@ const DB = {
     }
   },
 
-  /**
-   * When editing an elimination result, clear the previously advanced team
-   * from the next-round fixture (and cascade: clear that fixture's result
-   * too since it is now invalid).
-   */
   async clearAdvancedWinner(tournamentId, currentRound, currentMatchNumber) {
     const nextRound       = currentRound + 1;
     const nextMatchNumber = Math.ceil(currentMatchNumber / 2);
@@ -681,103 +590,53 @@ const DB = {
     }
   },
 
-/**
-   * After advancing a winner, verify the next-round fixture actually received
-   * the team in the correct slot. If not (e.g. old buggy round numbering in DB),
-   * find the fixture by scanning and patch it directly.
-   *
-   * This is safe to call on every save — if the slot is already correct it
-   * is a no-op.
-   *
-   * @param {string} tournamentId
-   * @param {number} currentRound
-   * @param {number} currentMatchNumber
-   * @param {string} winnerTeamId
-   */
   async repairNextFixture(tournamentId, currentRound, currentMatchNumber, winnerTeamId) {
     const nextRound       = currentRound + 1;
     const nextMatchNumber = Math.ceil(currentMatchNumber / 2);
     const slot            = currentMatchNumber % 2 === 1 ? 'home_team' : 'away_team';
 
     try {
-      // First check the expected fixture — if it already has the right winner, done
       const expected = await pb.collection('fixtures').getFullList({
         filter: `tournament = "${tournamentId}" && round = ${nextRound} && match_number = ${nextMatchNumber} && !is_bye`,
       });
 
       if (expected.length) {
-        const fx       = expected[0];
-        const current  = typeof fx[slot] === 'object' ? fx[slot]?.id : fx[slot];
+        const fx      = expected[0];
+        const current = typeof fx[slot] === 'object' ? fx[slot]?.id : fx[slot];
         if (current === winnerTeamId) {
-          Logger.debug('repairNextFixture: slot already correct', { slot, fixtureId: fx.id });
+          Logger.debug('repairNextFixture: slot already correct', { slot });
           return;
         }
-        // Slot exists but has wrong value — overwrite it
         await pb.collection('fixtures').update(fx.id, { [slot]: winnerTeamId });
-        Logger.warn('repairNextFixture: corrected wrong slot value', {
-          fixtureId : fx.id,
-          slot,
-          was       : current,
-          now       : winnerTeamId,
-        });
+        Logger.warn('repairNextFixture: corrected wrong slot value', { fixtureId: fx.id, slot });
         return;
       }
 
-      // Expected fixture not found by round/match — scan knockout fixtures
-      // and find the one that should logically follow this match.
-      // This handles old tournaments where round numbers were stored with the
-      // v4.1 offset bug and don't match the expected nextRound value.
-      Logger.warn('repairNextFixture: expected fixture not found, scanning', {
-        expectedRound: nextRound, expectedMatch: nextMatchNumber,
-      });
-
+      // Scan fallback for old buggy round numbers
       const allKnockout = await pb.collection('fixtures').getFullList({
         filter : `tournament = "${tournamentId}" && group_name = "" && !is_bye`,
         sort   : 'round,match_number',
       });
 
-      // Group knockout fixtures by round, then find the round after the current one
-      const rounds = [...new Set(allKnockout.map(f => f.round))].sort((a, b) => a - b);
+      const rounds          = [...new Set(allKnockout.map(f => f.round))].sort((a, b) => a - b);
       const currentRoundIdx = rounds.indexOf(currentRound);
-      if (currentRoundIdx === -1 || currentRoundIdx + 1 >= rounds.length) {
-        Logger.debug('repairNextFixture: no subsequent knockout round found (may be the final)');
-        return;
-      }
+      if (currentRoundIdx === -1 || currentRoundIdx + 1 >= rounds.length) return;
 
       const actualNextRound = rounds[currentRoundIdx + 1];
-      const nextRoundFx     = allKnockout
-        .filter(f => f.round === actualNextRound)
-        .sort((a, b) => a.match_number - b.match_number);
-
-      // Determine which fixture in the next round this match feeds into
-      const currentRoundFx  = allKnockout
-        .filter(f => f.round === currentRound)
-        .sort((a, b) => a.match_number - b.match_number);
+      const nextRoundFx     = allKnockout.filter(f => f.round === actualNextRound).sort((a, b) => a.match_number - b.match_number);
+      const currentRoundFx  = allKnockout.filter(f => f.round === currentRound).sort((a, b) => a.match_number - b.match_number);
       const positionInRound = currentRoundFx.findIndex(f => f.match_number === currentMatchNumber);
       const targetFixtureIdx = Math.floor(positionInRound / 2);
       const targetSlot       = positionInRound % 2 === 0 ? 'home_team' : 'away_team';
 
-      if (targetFixtureIdx >= nextRoundFx.length) {
-        Logger.warn('repairNextFixture: target fixture index out of range', { targetFixtureIdx });
-        return;
-      }
+      if (targetFixtureIdx >= nextRoundFx.length) return;
 
-      const targetFx    = nextRoundFx[targetFixtureIdx];
-      const currentVal  = typeof targetFx[targetSlot] === 'object'
-        ? targetFx[targetSlot]?.id
-        : targetFx[targetSlot];
-
-      if (currentVal === winnerTeamId) {
-        Logger.debug('repairNextFixture: scan found slot already correct');
-        return;
-      }
+      const targetFx   = nextRoundFx[targetFixtureIdx];
+      const currentVal = typeof targetFx[targetSlot] === 'object' ? targetFx[targetSlot]?.id : targetFx[targetSlot];
+      if (currentVal === winnerTeamId) return;
 
       await pb.collection('fixtures').update(targetFx.id, { [targetSlot]: winnerTeamId });
-      Logger.warn('repairNextFixture: patched via scan', {
-        fixtureId  : targetFx.id,
-        slot       : targetSlot,
-        winnerTeamId,
-      });
+      Logger.warn('repairNextFixture: patched via scan', { fixtureId: targetFx.id, slot: targetSlot });
 
     } catch (e) {
       Logger.warn('repairNextFixture failed', { error: e.message });
@@ -785,21 +644,8 @@ const DB = {
   },
 
   /**
-   * After all group matches complete, rank each group by wins then point
-   * differential, then seed the top-2 finishers into the knockout bracket
-   * using cross-group matchups.
-   *
-   * Cross-seed pattern (N groups, 2 advance per group):
-   *   firsts  = [A1, B1, C1, …]
-   *   seconds = [A2, B2, C2, …]
-   *   slots   = [A1, B2, B1, C2, C1, A2]   (each 1st vs next group's 2nd)
-   *
-   * SAFE TO CALL UNCONDITIONALLY — checks internally whether all groups are
-   * complete before doing anything. Returns true if seeding was performed.
-   *
-   * @param {string} tournamentId
-   * @param {Array}  allTeams - Team records (used for name lookups only)
-   * @returns {Promise<boolean>} true if knockout was seeded, false if not ready
+   * Seed knockout bracket from group standings. Internal completion guard —
+   * returns false if groups are not all done yet.
    */
   async seedKnockoutFromGroups(tournamentId, allTeams) {
     Logger.info('DB.seedKnockoutFromGroups: checking group completion');
@@ -811,28 +657,22 @@ const DB = {
     });
 
     const groupFxAll = freshFixtures.filter(f => f.group_name && !f.is_bye);
-    if (!groupFxAll.length) {
-      Logger.warn('seedKnockoutFromGroups: no group fixtures found');
-      return false;
-    }
+    if (!groupFxAll.length) { Logger.warn('seedKnockoutFromGroups: no group fixtures'); return false; }
+
     const allGroupsDone = groupFxAll.every(f => f.status === 'completed');
     if (!allGroupsDone) {
-      const remaining = groupFxAll.filter(f => f.status !== 'completed').length;
-      Logger.debug('seedKnockoutFromGroups: groups not complete yet', { remaining });
+      Logger.debug('seedKnockoutFromGroups: not complete yet', {
+        remaining: groupFxAll.filter(f => f.status !== 'completed').length,
+      });
       return false;
     }
 
-    Logger.info('seedKnockoutFromGroups: all group matches done — seeding knockout');
+    Logger.info('seedKnockoutFromGroups: seeding knockout');
 
-    const groupNames = [...new Set(groupFxAll.map(f => f.group_name))].sort();
-    Logger.info('Groups found', { groupNames });
-
+    const groupNames    = [...new Set(groupFxAll.map(f => f.group_name))].sort();
     const groupRankings = groupNames.map(gName => {
       const standings = _computeGroupStandings(freshFixtures, allTeams, gName);
-      if (standings.length < 2) {
-        Logger.error('Fewer than 2 teams ranked in group', { gName, count: standings.length });
-      }
-      const top2 = standings.slice(0, 2);
+      const top2      = standings.slice(0, 2);
       Logger.info(`${gName} top 2`, top2.map(s => `${s.name} W:${s.wins} PD:${s.pointDiff}`));
       return top2;
     });
@@ -845,13 +685,10 @@ const DB = {
       advancers.push(seconds[(i + 1) % seconds.length]);
     }
 
-    Logger.info('Advancers', advancers.map((a, i) =>
-      `[${i}] ${a?.name ?? 'MISSING'} id=${a?.teamId ?? 'NONE'}`));
+    Logger.info('Advancers', advancers.map((a, i) => `[${i}] ${a?.name ?? 'MISSING'}`));
 
     if (advancers.some(a => !a?.teamId)) {
-      Logger.error('seedKnockoutFromGroups: missing teamId in advancers — aborting', {
-        slots: advancers.map(a => a?.teamId ?? 'MISSING'),
-      });
+      Logger.error('seedKnockoutFromGroups: missing teamId — aborting');
       return false;
     }
 
@@ -859,35 +696,19 @@ const DB = {
       .filter(f => !f.group_name && !f.is_bye)
       .sort((a, b) => a.round !== b.round ? a.round - b.round : a.match_number - b.match_number);
 
-    if (!knockoutFx.length) {
-      Logger.error('seedKnockoutFromGroups: no knockout fixtures in DB');
-      return false;
-    }
+    if (!knockoutFx.length) { Logger.error('seedKnockoutFromGroups: no knockout fixtures in DB'); return false; }
 
     const firstKoRound = Math.min(...knockoutFx.map(f => f.round));
-    const firstRoundFx = knockoutFx
-      .filter(f => f.round === firstKoRound)
-      .sort((a, b) => a.match_number - b.match_number);
-
-    Logger.info('Updating first KO round fixtures', {
-      round: firstKoRound,
-      count: firstRoundFx.length,
-    });
+    const firstRoundFx = knockoutFx.filter(f => f.round === firstKoRound).sort((a, b) => a.match_number - b.match_number);
 
     for (let i = 0; i < firstRoundFx.length; i++) {
       const homeAdv = advancers[i * 2];
       const awayAdv = advancers[i * 2 + 1];
-
       await pb.collection('fixtures').update(firstRoundFx[i].id, {
         home_team : homeAdv.teamId,
         away_team : awayAdv.teamId,
       });
-
-      Logger.info('Fixture seeded', {
-        fixtureId : firstRoundFx[i].id,
-        home      : homeAdv.name,
-        away      : awayAdv.name,
-      });
+      Logger.info('Fixture seeded', { fixtureId: firstRoundFx[i].id, home: homeAdv.name, away: awayAdv.name });
     }
 
     return true;
@@ -895,51 +716,29 @@ const DB = {
 };
 
 /* =============================================================================
-   MIGRATION — repair tournaments created with v4.1 buggy fixture generation.
-
-   Runs once on init. Safe to call repeatedly — all checks are idempotent.
-
-   Two failure modes are repaired:
-     A) Knockout fixtures empty (semifinals not seeded) — group stage complete
-        but seedKnockoutFromGroups never fired or failed silently.
-     B) Final empty (semifinals played but winners not advanced) — 
-        advanceWinnerElimination failed to find the next fixture.
+   9. MIGRATION — repair tournaments created with old buggy round numbering
    ============================================================================= */
 async function migrateExistingTournaments() {
   Logger.info('Migration: checking for broken tournaments');
-
   let tournaments;
   try {
     tournaments = await pb.collection('tournaments').getFullList({ sort: '-created' });
   } catch (e) {
-    Logger.error('Migration: failed to fetch tournaments', { error: e.message });
+    Logger.error('Migration: failed to fetch', { error: e.message });
     return;
   }
 
-  const active = tournaments.filter(t =>
-    t.status === 'active' && t.format === 'group_stage'
-  );
-
-  Logger.info('Migration: active group_stage tournaments to check', { count: active.length });
-
+  const active = tournaments.filter(t => t.status === 'active' && t.format === 'group_stage');
   for (const tournament of active) {
-    try {
-      await _migrateTournament(tournament);
-    } catch (e) {
-      Logger.error('Migration: failed for tournament', { id: tournament.id, error: e.message });
-    }
+    try { await _migrateTournament(tournament); }
+    catch (e) { Logger.error('Migration: failed for tournament', { id: tournament.id, error: e.message }); }
   }
-
   Logger.info('Migration: complete');
 }
 
 async function _migrateTournament(tournament) {
-  Logger.info('Migration: checking tournament', { id: tournament.id, name: tournament.name });
-
   const [allTeams, allFixtures] = await Promise.all([
-    pb.collection('teams').getFullList({
-      filter: `tournament = "${tournament.id}"`, sort: 'seed',
-    }),
+    pb.collection('teams').getFullList({ filter: `tournament = "${tournament.id}"`, sort: 'seed' }),
     pb.collection('fixtures').getFullList({
       filter: `tournament = "${tournament.id}"`,
       sort: 'round,match_number',
@@ -949,148 +748,45 @@ async function _migrateTournament(tournament) {
 
   const groupFx    = allFixtures.filter(f => f.group_name && !f.is_bye);
   const knockoutFx = allFixtures.filter(f => !f.group_name && !f.is_bye);
-
-  if (!groupFx.length || !knockoutFx.length) {
-    Logger.debug('Migration: skipping — no group or knockout fixtures', { id: tournament.id });
-    return;
-  }
+  if (!groupFx.length || !knockoutFx.length) return;
 
   const allGroupsDone = groupFx.every(f => f.status === 'completed');
-  if (!allGroupsDone) {
-    Logger.debug('Migration: groups not complete yet', { id: tournament.id });
-    return;
-  }
+  if (!allGroupsDone) return;
 
-  // Check every completed knockout fixture and verify its winner is correctly
-  // placed in the next round. This catches stale manual patches and any case
-  // where advanceWinnerElimination fired but wrote to the wrong fixture.
-  const completedKnockout = knockoutFx
-    .filter(f => f.status === 'completed' && f.winner)
-    .sort((a, b) => a.round !== b.round ? a.round - b.round : a.match_number - b.match_number);
-
-  // Also check first knockout round is seeded at all
   const firstKoRound = Math.min(...knockoutFx.map(f => f.round));
-  const firstRoundFx = knockoutFx.filter(f => f.round === firstKoRound);
-  const knockoutUnseeded = firstRoundFx.every(f => !f.home_team && !f.away_team);
+  const knockoutUnseeded = knockoutFx.filter(f => f.round === firstKoRound).every(f => !f.home_team && !f.away_team);
 
   if (knockoutUnseeded) {
-    Logger.warn('Migration: knockout unseeded — seeding now', { id: tournament.id });
+    Logger.warn('Migration: seeding knockout', { id: tournament.id });
     await _migrateSeeding(tournament.id, allTeams, allFixtures, knockoutFx);
-    // Re-fetch after seeding before checking advancement
     return;
   }
 
-  // Walk every completed knockout match and verify winner is in the right slot
-  // of the next fixture. Fix it if not.
-  let repaired = false;
   const rounds = [...new Set(knockoutFx.map(f => f.round))].sort((a, b) => a - b);
-
-  for (const fx of completedKnockout) {
+  for (const fx of knockoutFx.filter(f => f.status === 'completed' && f.winner).sort((a,b) => a.round-b.round||a.match_number-b.match_number)) {
     const currentRoundIdx = rounds.indexOf(fx.round);
     if (currentRoundIdx === -1 || currentRoundIdx + 1 >= rounds.length) continue;
 
-    const nextRound   = rounds[currentRoundIdx + 1];
-    const currentRoundFx = knockoutFx
-      .filter(f => f.round === fx.round)
-      .sort((a, b) => a.match_number - b.match_number);
-    const positionInRound  = currentRoundFx.findIndex(f => f.id === fx.id);
-    const nextMatchIdx     = Math.floor(positionInRound / 2);
-    const slot             = positionInRound % 2 === 0 ? 'home_team' : 'away_team';
+    const nextRound      = rounds[currentRoundIdx + 1];
+    const currentRoundFx = knockoutFx.filter(f => f.round === fx.round).sort((a,b) => a.match_number - b.match_number);
+    const posInRound     = currentRoundFx.findIndex(f => f.id === fx.id);
+    const slot           = posInRound % 2 === 0 ? 'home_team' : 'away_team';
+    const nextRoundFx    = knockoutFx.filter(f => f.round === nextRound).sort((a,b) => a.match_number - b.match_number);
+    const nextFx         = nextRoundFx[Math.floor(posInRound / 2)];
+    if (!nextFx) continue;
 
-    const nextRoundFx = knockoutFx
-      .filter(f => f.round === nextRound)
-      .sort((a, b) => a.match_number - b.match_number);
-
-    if (nextMatchIdx >= nextRoundFx.length) continue;
-
-    const nextFx     = nextRoundFx[nextMatchIdx];
     const winnerId   = typeof fx.winner === 'object' ? fx.winner.id : fx.winner;
     const currentVal = typeof nextFx[slot] === 'object' ? nextFx[slot]?.id : nextFx[slot];
-
-    if (currentVal === winnerId) {
-      Logger.debug('Migration: slot correct', { round: fx.round, match: fx.match_number, slot });
-      continue;
-    }
-
-    Logger.warn('Migration: fixing wrong winner in next fixture', {
-      from    : `R${fx.round}M${fx.match_number}`,
-      nextId  : nextFx.id,
-      slot,
-      was     : currentVal,
-      correct : winnerId,
-    });
+    if (currentVal === winnerId) continue;
 
     await pb.collection('fixtures').update(nextFx.id, { [slot]: winnerId });
-    repaired = true;
-  }
-
-  if (repaired) {
-    Logger.info('Migration: repairs applied', { id: tournament.id });
-  } else {
-    Logger.debug('Migration: tournament looks healthy', { id: tournament.id });
+    Logger.warn('Migration: fixed winner slot', { from: `R${fx.round}M${fx.match_number}`, slot });
   }
 }
-/*async function _migrateTournament(tournament) {
-  Logger.info('Migration: checking tournament', { id: tournament.id, name: tournament.name });
 
-  const [allTeams, allFixtures] = await Promise.all([
-    pb.collection('teams').getFullList({
-      filter: `tournament = "${tournament.id}"`, sort: 'seed',
-    }),
-    pb.collection('fixtures').getFullList({
-      filter: `tournament = "${tournament.id}"`,
-      sort: 'round,match_number',
-      expand: 'home_team,away_team,winner',
-    }),
-  ]);
-
-  const groupFx    = allFixtures.filter(f => f.group_name && !f.is_bye);
-  const knockoutFx = allFixtures.filter(f => !f.group_name && !f.is_bye);
-
-  if (!groupFx.length || !knockoutFx.length) {
-    Logger.debug('Migration: skipping — no group or knockout fixtures', { id: tournament.id });
-    return;
-  }
-
-  const allGroupsDone = groupFx.every(f => f.status === 'completed');
-
-  // ── Case A: group stage done but knockout not seeded yet
-  if (allGroupsDone) {
-    const knockoutEmpty = knockoutFx.every(f => !f.home_team && !f.away_team);
-    const knockoutPartial = !knockoutEmpty &&
-      knockoutFx.some(f => f.status !== 'completed' && (!f.home_team || !f.away_team));
-
-    if (knockoutEmpty) {
-      Logger.warn('Migration: knockout completely unseeded — seeding now', { id: tournament.id });
-      await _migrateSeeding(tournament.id, allTeams, allFixtures, knockoutFx);
-      return;
-    }
-
-    if (knockoutPartial) {
-      Logger.warn('Migration: knockout partially played — checking for unadvanced winners', { id: tournament.id });
-      await _migrateAdvancement(tournament.id, allFixtures, knockoutFx);
-      return;
-    }
-  }
-
-  Logger.debug('Migration: tournament looks healthy', { id: tournament.id });
-}
-*/
-/**
- * Case A — seed the first knockout round from group standings.
- * Mirrors DB.seedKnockoutFromGroups but works from already-fetched data.
- */
 async function _migrateSeeding(tournamentId, allTeams, allFixtures, knockoutFx) {
-  const groupNames = [...new Set(
-    allFixtures.filter(f => f.group_name && !f.is_bye).map(f => f.group_name)
-  )].sort();
-
-  const groupRankings = groupNames.map(gName => {
-    const standings = _computeGroupStandings(allFixtures, allTeams, gName);
-    Logger.info(`Migration: ${gName} standings`, standings.map(s => `${s.name} W:${s.wins} PD:${s.pointDiff}`));
-    return standings.slice(0, 2);
-  });
-
+  const groupNames    = [...new Set(allFixtures.filter(f => f.group_name && !f.is_bye).map(f => f.group_name))].sort();
+  const groupRankings = groupNames.map(gName => _computeGroupStandings(allFixtures, allTeams, gName).slice(0, 2));
   const firsts  = groupRankings.map(g => g[0]);
   const seconds = groupRankings.map(g => g[1]);
   const advancers = [];
@@ -1098,86 +794,24 @@ async function _migrateSeeding(tournamentId, allTeams, allFixtures, knockoutFx) 
     advancers.push(firsts[i]);
     advancers.push(seconds[(i + 1) % seconds.length]);
   }
-
-  if (advancers.some(a => !a?.teamId)) {
-    Logger.error('Migration: missing teamId in advancers — aborting', {
-      slots: advancers.map(a => a?.teamId ?? 'MISSING'),
-    });
-    return;
-  }
+  if (advancers.some(a => !a?.teamId)) { Logger.error('Migration: missing teamId — aborting'); return; }
 
   const firstKoRound = Math.min(...knockoutFx.map(f => f.round));
-  const firstRoundFx = knockoutFx
-    .filter(f => f.round === firstKoRound)
-    .sort((a, b) => a.match_number - b.match_number);
-
+  const firstRoundFx = knockoutFx.filter(f => f.round === firstKoRound).sort((a,b) => a.match_number - b.match_number);
   for (let i = 0; i < firstRoundFx.length; i++) {
-    const homeAdv = advancers[i * 2];
-    const awayAdv = advancers[i * 2 + 1];
     await pb.collection('fixtures').update(firstRoundFx[i].id, {
-      home_team : homeAdv.teamId,
-      away_team : awayAdv.teamId,
-    });
-    Logger.info('Migration: seeded fixture', {
-      id   : firstRoundFx[i].id,
-      home : homeAdv.name,
-      away : awayAdv.name,
+      home_team: advancers[i*2].teamId,
+      away_team: advancers[i*2+1].teamId,
     });
   }
 }
 
-/**
- * Case B — find completed knockout fixtures whose winner was never advanced,
- * and push the winner into the correct slot of the next fixture.
- */
-async function _migrateAdvancement(tournamentId, allFixtures, knockoutFx) {
-  const completed = knockoutFx
-    .filter(f => f.status === 'completed' && f.winner)
-    .sort((a, b) => a.round !== b.round ? a.round - b.round : a.match_number - b.match_number);
-
-  for (const fx of completed) {
-    const nextRound       = fx.round + 1;
-    const nextMatchNumber = Math.ceil(fx.match_number / 2);
-    const slot            = fx.match_number % 2 === 1 ? 'home_team' : 'away_team';
-
-    const nextFx = knockoutFx.find(
-      f => f.round === nextRound && f.match_number === nextMatchNumber
-    );
-
-    if (!nextFx) {
-      Logger.debug('Migration: no next fixture (this is the final or last round)', {
-        round: fx.round, match: fx.match_number,
-      });
-      continue;
-    }
-
-    const winnerId = typeof fx.winner === 'object' ? fx.winner.id : fx.winner;
-    const currentSlotValue = nextFx[slot];
-    const currentSlotId = typeof currentSlotValue === 'object'
-      ? currentSlotValue?.id
-      : currentSlotValue;
-
-    if (currentSlotId === winnerId) {
-      Logger.debug('Migration: slot already correct, skipping', { slot, nextFx: nextFx.id });
-      continue;
-    }
-
-    Logger.warn('Migration: advancing winner into next fixture', {
-      from : `R${fx.round}M${fx.match_number}`,
-      to   : `R${nextRound}M${nextMatchNumber}`,
-      slot,
-      winner: fx.expand?.winner?.name ?? winnerId,
-    });
-
-    await pb.collection('fixtures').update(nextFx.id, { [slot]: winnerId });
-  }
-}
 /* =============================================================================
-   9. APP CONTROLLER
+   10. APP CONTROLLER
    ============================================================================= */
 const App = {
 
-  /* ── 9a. INITIALISATION ──────────────────────────────────────────────── */
+  /* ── 10a. INITIALISATION ─────────────────────────────────────────────── */
 
   async init() {
     Logger.info('App.init', { version: CONFIG.VERSION });
@@ -1192,8 +826,17 @@ const App = {
     await App.loadTournaments();
   },
 
-  /* ── 9b. HOME SCREEN ─────────────────────────────────────────────────── */
+  /* ── 10b. HOME SCREEN ────────────────────────────────────────────────── */
 
+  /**
+   * Load all tournaments and render the home screen.
+   *
+   * Rendering logic:
+   *   - Tournaments WITH an event_name are grouped under an event header.
+   *   - Tournaments WITHOUT an event_name render as standalone items.
+   *   - Within an event group, categories are sorted by created date.
+   *   - Each event header has an "+ Add category" button.
+   */
   async loadTournaments() {
     Logger.info('loadTournaments');
     UI.clearError('home-error');
@@ -1213,25 +856,145 @@ const App = {
         return;
       }
 
-      list.innerHTML = tournaments.map(t => `
-        <div class="tournament-item">
-          <div class="tournament-item-info">
-            <h3>${escHtml(t.name)}</h3>
-            <p>${t.format.replace(/_/g, ' ')} · ${new Date(t.created).toLocaleDateString()}</p>
-          </div>
-          <div class="tournament-item-actions">
-            <span class="status-badge badge-${t.status}">${t.status}</span>
-            <button class="btn sm primary" onclick="App.openTournament('${t.id}')">Open</button>
-            <a class="btn sm ghost" href="bracket.html?id=${t.id}" target="_blank">Bracket</a>
-            <button class="btn sm danger" onclick="App.deleteTournament('${t.id}','${escHtml(t.name)}')">Delete</button>
-          </div>
-        </div>`).join('');
+      // Separate events (grouped) from standalone tournaments
+      const events     = {};  // { eventName: [tournament, ...] }
+      const standalone = [];
+
+      tournaments.forEach(t => {
+        const ev = (t.event_name || '').trim();
+        if (ev) {
+          if (!events[ev]) events[ev] = [];
+          events[ev].push(t);
+        } else {
+          standalone.push(t);
+        }
+      });
+
+      let html = '';
+
+      // Render event groups first (alphabetically by event name)
+      Object.keys(events).sort().forEach(eventName => {
+        html += App._renderEventGroup(eventName, events[eventName]);
+      });
+
+      // Render standalone tournaments
+      standalone.forEach(t => {
+        html += App._renderTournamentItem(t);
+      });
+
+      list.innerHTML = html;
 
     } catch (e) {
       Logger.error('loadTournaments failed', { error: e.message });
       UI.showError('home-error', 'home-error-msg', `Could not load tournaments: ${e.message}`);
       list.innerHTML = '<div class="empty-state"><span class="empty-icon">⚠️</span>Failed to load.</div>';
     }
+  },
+
+  /**
+   * Render an event group — a collapsible header with all its categories.
+   *
+   * @param {string}   eventName   - The event name (e.g. "JBB 2025")
+   * @param {Array}    categories  - Tournament records belonging to this event
+   * @returns {string} HTML string
+   */
+  _renderEventGroup(eventName, categories) {
+    const allDone     = categories.every(c => c.status === 'completed');
+    const anyActive   = categories.some(c => c.status === 'active');
+    const groupStatus = allDone ? 'completed' : anyActive ? 'active' : 'pending';
+
+    const statusColors = {
+      pending   : 'var(--text-tertiary)',
+      active    : '#d4860a',
+      completed : 'var(--accent)',
+    };
+
+    const categoryRows = categories.map(t => App._renderTournamentItem(t, true)).join('');
+
+    return `
+      <div class="event-group" style="
+        background    : var(--bg-primary);
+        border        : 0.5px solid var(--border-light);
+        border-radius : var(--radius-lg);
+        margin-bottom : 10px;
+        overflow      : hidden;
+      ">
+        <!-- Event header -->
+        <div style="
+          display         : flex;
+          align-items     : center;
+          justify-content : space-between;
+          padding         : 0.85rem 1rem;
+          background      : var(--bg-secondary);
+          border-bottom   : 0.5px solid var(--border-light);
+          flex-wrap       : wrap;
+          gap             : 8px;
+        ">
+          <div style="display:flex;align-items:center;gap:10px;">
+            <span style="font-size:16px;">🏆</span>
+            <div>
+              <div style="font-size:14px;font-weight:600;color:var(--text-primary)">
+                ${escHtml(eventName)}
+              </div>
+              <div style="font-size:11px;color:var(--text-tertiary);margin-top:1px;">
+                ${categories.length} ${categories.length === 1 ? 'category' : 'categories'}
+                &nbsp;·&nbsp;
+                <span style="color:${statusColors[groupStatus]}">${groupStatus}</span>
+              </div>
+            </div>
+          </div>
+          <button class="btn sm primary"
+                  onclick="App.goToSetupForEvent('${escHtml(eventName).replace(/'/g, "\\'")}')">
+            + Add category
+          </button>
+        </div>
+        <!-- Categories -->
+        <div style="padding:6px 0;">
+          ${categoryRows}
+        </div>
+      </div>`;
+  },
+
+  /**
+   * Render a single tournament row.
+   *
+   * @param {object}  tournament  - PocketBase tournament record
+   * @param {boolean} isCategory  - When true, renders with indented category style
+   * @returns {string} HTML string
+   */
+  _renderTournamentItem(tournament, isCategory = false) {
+    const t          = tournament;
+    const formatText = t.format.replace(/_/g, ' ');
+    const dateText   = new Date(t.created).toLocaleDateString();
+
+    return `
+      <div style="
+        display         : flex;
+        align-items     : center;
+        justify-content : space-between;
+        padding         : ${isCategory ? '0.6rem 1rem 0.6rem 2rem' : '0.85rem 1rem'};
+        border-bottom   : 0.5px solid var(--border-light);
+        flex-wrap       : wrap;
+        gap             : 8px;
+        transition      : background 0.12s;
+      " onmouseover="this.style.background='var(--bg-secondary)'"
+         onmouseout="this.style.background='transparent'">
+        <div>
+          <div style="font-size:${isCategory ? '13px' : '14px'};font-weight:500;color:var(--text-primary);display:flex;align-items:center;gap:6px;">
+            ${isCategory ? '<span style="font-size:11px;color:var(--text-tertiary)">↳</span>' : ''}
+            ${escHtml(t.name)}
+          </div>
+          <div style="font-size:11px;color:var(--text-tertiary);margin-top:2px;">
+            ${formatText} · ${dateText}
+          </div>
+        </div>
+        <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
+          <span class="status-badge badge-${t.status}">${t.status}</span>
+          <button class="btn sm primary" onclick="App.openTournament('${t.id}')">Open</button>
+          <a class="btn sm ghost" href="bracket.html?id=${t.id}" target="_blank">Bracket</a>
+          <button class="btn sm danger" onclick="App.deleteTournament('${t.id}','${escHtml(t.name).replace(/'/g, "\\'")}')">Delete</button>
+        </div>
+      </div>`;
   },
 
   async openTournament(tournamentId) {
@@ -1266,19 +1029,87 @@ const App = {
     App.loadTournaments();
   },
 
-  /* ── 9c. SETUP SCREEN ────────────────────────────────────────────────── */
+  /* ── 10c. SETUP SCREEN ───────────────────────────────────────────────── */
 
+  /**
+   * Open the setup screen for a brand-new tournament or category.
+   * Resets all setup state.
+   */
   goToSetup() {
-    State.setupData = { teamCount: 8, format: 'elimination', name: '', names: [] };
+    State.setupData = { teamCount: 8, format: 'elimination', name: '', eventName: '', names: [] };
     const tc = document.getElementById('team-count');
     const tn = document.getElementById('tournament-name');
+    const en = document.getElementById('event-name');
     if (tc) tc.value = 8;
     if (tn) tn.value = '';
+    if (en) { en.value = ''; App._updateSetupLabels(''); }
     App._renderFormatGrid();
+    App._populateEventSuggestions();
     UI.showScreen('screen-setup');
   },
 
+  /**
+   * NEW: Open the setup screen pre-filled with an existing event name.
+   * Used by the "+ Add category" button on event groups.
+   *
+   * @param {string} eventName - Event name to pre-fill
+   */
+  goToSetupForEvent(eventName) {
+    Logger.info('goToSetupForEvent', { eventName });
+    State.setupData = { teamCount: 8, format: 'elimination', name: '', eventName, names: [] };
+    const tc = document.getElementById('team-count');
+    const tn = document.getElementById('tournament-name');
+    const en = document.getElementById('event-name');
+    if (tc) tc.value = 8;
+    if (tn) tn.value = '';
+    if (en) { en.value = eventName; App._updateSetupLabels(eventName); }
+    App._renderFormatGrid();
+    App._populateEventSuggestions();
+    UI.showScreen('screen-setup');
+  },
+
+  /**
+   * Inject the event-name input field into the setup card if it is not
+   * already present in the HTML. This keeps index.html minimal — no manual
+   * HTML edits required for this feature.
+   *
+   * Called once on App.init(). The injected field persists for the session.
+   */
   _initSetupScreen() {
+    // Inject event-name field if not already in the HTML
+    if (!document.getElementById('event-name')) {
+      const tnInput = document.getElementById('tournament-name');
+      if (tnInput) {
+        const eventNameHtml = `
+          <div id="event-name-group" style="margin-bottom:1rem;margin-top:-0.5rem;">
+            <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:6px;" id="event-name-label">
+              Event name
+              <span style="font-size:11px;color:var(--text-tertiary);font-style:italic;">
+                — optional, groups categories together (e.g. "JBB 2025")
+              </span>
+            </label>
+            <input type="text" id="event-name" class="tournament-name-input"
+                   placeholder="e.g. JBB 2025, City Cup, School League"
+                   maxlength="60"
+                   list="event-name-suggestions"
+                   style="margin-bottom:0;" />
+            <datalist id="event-name-suggestions"></datalist>
+          </div>`;
+
+        // Insert AFTER the tournament-name input's parent wrapper
+        tnInput.insertAdjacentHTML('afterend', eventNameHtml);
+
+        Logger.info('_initSetupScreen: event-name field injected');
+      }
+    }
+
+    // Also update the tournament-name label to clarify its dual role
+    const tnLabel = document.querySelector('label[for="tournament-name"], label + #tournament-name');
+    if (tnLabel && tnLabel.tagName === 'LABEL') {
+      tnLabel.innerHTML = `Tournament / Category name`;
+    }
+
+    // Wire up team count input
     App._renderFormatGrid();
     document.getElementById('team-count')?.addEventListener('input', function () {
       const n = parseInt(this.value, 10);
@@ -1290,6 +1121,48 @@ const App = {
         App._renderFormatGrid();
       }
     });
+
+    // Wire up event-name input: update labels and state as user types
+    document.getElementById('event-name')?.addEventListener('input', function () {
+      const val = this.value.trim();
+      State.setupData.eventName = val;
+      App._updateSetupLabels(val);
+    });
+  },
+
+  /**
+   * Update the tournament-name label text depending on whether an event name
+   * is set. When an event is named, the field becomes "Category name".
+   *
+   * @param {string} eventName - Current value of the event-name input
+   */
+  _updateSetupLabels(eventName) {
+    // Find the label immediately before the tournament-name input
+    const tnInput = document.getElementById('tournament-name');
+    if (!tnInput) return;
+    // Walk backwards through siblings to find the label
+    let el = tnInput.previousElementSibling;
+    while (el && el.tagName !== 'LABEL') el = el.previousElementSibling;
+
+    if (el && el.tagName === 'LABEL') {
+      el.textContent = eventName ? 'Category name' : 'Tournament / Category name';
+    }
+  },
+
+  /**
+   * Populate the autocomplete datalist with existing event names from the DB.
+   * Called each time the setup screen opens so new events appear immediately.
+   */
+  async _populateEventSuggestions() {
+    const datalist = document.getElementById('event-name-suggestions');
+    if (!datalist) return;
+    try {
+      const events = await DB.getEvents();
+      datalist.innerHTML = events.map(e => `<option value="${escHtml(e)}">`).join('');
+      Logger.debug('_populateEventSuggestions', { count: events.length });
+    } catch (e) {
+      Logger.warn('_populateEventSuggestions failed', { error: e.message });
+    }
   },
 
   _renderFormatGrid() {
@@ -1325,16 +1198,19 @@ const App = {
     App._renderFormatGrid();
   },
 
-  /* ── 9d. NAMES SCREEN ────────────────────────────────────────────────── */
+  /* ── 10d. NAMES SCREEN ───────────────────────────────────────────────── */
 
   goToNames() {
     UI.clearError('setup-error');
-    const nameVal = (document.getElementById('tournament-name')?.value || '').trim();
-    const raw     = document.getElementById('team-count')?.value.trim();
-    const n       = parseInt(raw, 10);
+
+    const nameVal  = (document.getElementById('tournament-name')?.value || '').trim();
+    const eventVal = (document.getElementById('event-name')?.value     || '').trim();
+    const raw      = document.getElementById('team-count')?.value.trim();
+    const n        = parseInt(raw, 10);
 
     if (!nameVal) {
-      UI.showError('setup-error', 'setup-error-msg', 'Please enter a tournament name.');
+      const label = eventVal ? 'category name' : 'tournament name';
+      UI.showError('setup-error', 'setup-error-msg', `Please enter a ${label}.`);
       return;
     }
     if (!raw || isNaN(n) || n < 3 || n > 32) {
@@ -1344,7 +1220,15 @@ const App = {
     }
 
     State.setupData.name      = nameVal;
+    State.setupData.eventName = eventVal;
     State.setupData.teamCount = n;
+
+    Logger.info('goToNames', {
+      name      : nameVal,
+      eventName : eventVal || '(none)',
+      teams     : n,
+      format    : State.setupData.format,
+    });
 
     const grid = document.getElementById('team-inputs');
     if (grid) {
@@ -1358,7 +1242,7 @@ const App = {
     UI.showScreen('screen-names');
   },
 
-  /* ── 9e. FIXTURE GENERATION & PERSISTENCE ────────────────────────────── */
+  /* ── 10e. FIXTURE GENERATION & PERSISTENCE ───────────────────────────── */
 
   async generateFixtures() {
     UI.clearError('names-error');
@@ -1370,7 +1254,6 @@ const App = {
     });
     State.setupData.names = names;
 
-    // Duplicate check
     const seen = new Set();
     for (const name of names) {
       const key = name.toLowerCase();
@@ -1386,11 +1269,18 @@ const App = {
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving...'; }
 
     try {
-      // 1 — Create tournament
-      const tournament = await DB.createTournament(State.setupData.name, State.setupData.format);
-      Logger.info('Tournament record created', { id: tournament.id });
+      // 1 — Create tournament record (with optional event_name)
+      const tournament = await DB.createTournament(
+        State.setupData.name,
+        State.setupData.format,
+        State.setupData.eventName || null,   // NEW: pass event name
+      );
+      Logger.info('Tournament record created', {
+        id        : tournament.id,
+        eventName : State.setupData.eventName || '(none)',
+      });
 
-      // 2 — Create teams, build name → ID map
+      // 2 — Create teams
       const teamMap   = {};
       const numGroups = State.setupData.format === 'group_stage'
         ? (names.length <= 8 ? 2 : names.length <= 12 ? 3 : 4) : null;
@@ -1399,23 +1289,21 @@ const App = {
         const groupName = numGroups ? 'ABCDEFGH'[i % numGroups] : null;
         const team      = await DB.createTeam(tournament.id, names[i], i + 1, groupName);
         teamMap[names[i]] = team.id;
-        Logger.debug('Team created', { name: names[i], id: team.id, group: groupName });
       }
 
-      // 3 — Generate fixture structure (pure, no DB)
+      // 3 — Generate fixture structure
       let generated;
       if      (State.setupData.format === 'round_robin') generated = genRoundRobin(names);
       else if (State.setupData.format === 'elimination') generated = genElimination(names);
       else                                               generated = genGroupStage(names);
 
-      // 4 — Persist to PocketBase
+      // 4 — Persist
       await App._persistFixtures(tournament.id, generated, teamMap);
-      Logger.info('All fixtures persisted');
 
       // 5 — Activate
       await DB.updateTournament(tournament.id, { status: 'active' });
 
-      // 6 — Load and navigate
+      // 6 — Navigate to fixtures screen
       State.activeTournament        = tournament;
       State.activeTournament.status = 'active';
       State.teams    = await DB.getTeams(tournament.id);
@@ -1433,30 +1321,16 @@ const App = {
     }
   },
 
-  /**
-   * Persist generated fixtures to PocketBase.
-   *
-   * KEY BEHAVIOUR: For elimination round 1, bye matches are saved with
-   * is_bye=true and status='completed'. After saving, the real team is
-   * immediately placed into the correct slot of the next-round fixture,
-   * so round 2 arrives pre-populated with all known teams.
-   *
-   * @param {string} tournamentId
-   * @param {object} generated   - Output of genRoundRobin / genElimination / genGroupStage
-   * @param {object} teamMap     - { teamName: pocketbaseTeamId }
-   */
   async _persistFixtures(tournamentId, generated, teamMap) {
     Logger.info('_persistFixtures', { type: generated.type });
 
     if (generated.type === 'elimination') {
-      // ── Elimination: persist rounds in order, handle byes specially
-      const savedFixtureMap = {};  // 'R{r}M{m}' → saved fixture record
+      const savedFixtureMap = {};
 
       for (const round of generated.rounds) {
         for (let mi = 0; mi < round.matches.length; mi++) {
-          const m   = round.matches[mi];
-          const key = `R${round.roundNumber}M${mi + 1}`;
-
+          const m      = round.matches[mi];
+          const key    = `R${round.roundNumber}M${mi + 1}`;
           const homeId = (!m.isBye && m.a !== 'TBD' && teamMap[m.a]) ? teamMap[m.a] : null;
           const awayId = (!m.isBye && m.b !== 'TBD' && m.b !== 'BYE' && teamMap[m.b]) ? teamMap[m.b] : null;
 
@@ -1471,38 +1345,23 @@ const App = {
             status       : m.isBye ? 'completed' : 'scheduled',
             group_name   : null,
           });
-
           savedFixtureMap[key] = saved;
-          Logger.debug('Fixture saved', { key, isBye: m.isBye });
         }
       }
 
-      // After all fixtures exist, seed bye winners into round 2
-      const round1 = generated.rounds[0];
-      for (let mi = 0; mi < round1.matches.length; mi++) {
-        const m = round1.matches[mi];
+      // Seed bye winners into round 2
+      for (let mi = 0; mi < generated.rounds[0].matches.length; mi++) {
+        const m = generated.rounds[0].matches[mi];
         if (!m.isBye) continue;
-
-        // The real team is always in slot 'a' (byes are always slot 'b')
-        const winnerTeamId    = teamMap[m.a];
-        const nextRound       = 2;
-        const nextMatchNumber = m.nextMatchNumber;
-        const slot            = m.nextSlot === 'home' ? 'home_team' : 'away_team';
-
-        const nextKey = `R${nextRound}M${nextMatchNumber}`;
-        const nextFx  = savedFixtureMap[nextKey];
+        const slot   = m.nextSlot === 'home' ? 'home_team' : 'away_team';
+        const nextFx = savedFixtureMap[`R2M${m.nextMatchNumber}`];
         if (nextFx) {
-          await pb.collection('fixtures').update(nextFx.id, { [slot]: winnerTeamId });
-          Logger.info('Bye winner seeded into next round', {
-            team   : m.a,
-            into   : nextKey,
-            slot,
-          });
+          await pb.collection('fixtures').update(nextFx.id, { [slot]: teamMap[m.a] });
+          Logger.info('Bye winner seeded', { team: m.a, into: `R2M${m.nextMatchNumber}`, slot });
         }
       }
 
     } else if (generated.type === 'group_stage') {
-      // ── Group stage: round robin groups first, then knockout placeholders
       let roundOffset = 0;
 
       for (const group of generated.groupFixtures) {
@@ -1526,18 +1385,13 @@ const App = {
         roundOffset += group.rounds.length;
       }
 
-      // FIX 3: Knockout round placeholders use sequential index `ri` rather
-      // than `round.roundNumber`. Previously `roundOffset + round.roundNumber`
-      // double-counted since roundNumber is already 1-indexed within the
-      // knockout sub-bracket, causing knockout fixtures to get wrong round
-      // values and advanceWinnerElimination to fail to find the next fixture.
       for (let ri = 0; ri < generated.knockout.rounds.length; ri++) {
         const round = generated.knockout.rounds[ri];
         for (let mi = 0; mi < round.matches.length; mi++) {
           const m = round.matches[mi];
           await DB.createFixture({
             tournament   : tournamentId,
-            round        : roundOffset + ri + 1,   // ← FIXED: was roundOffset + round.roundNumber
+            round        : roundOffset + ri + 1,
             match_number : mi + 1,
             round_label  : round.label,
             home_team    : null,
@@ -1550,7 +1404,6 @@ const App = {
       }
 
     } else {
-      // ── Round robin: straightforward
       for (let ri = 0; ri < generated.rounds.length; ri++) {
         const round = generated.rounds[ri];
         for (let mi = 0; mi < round.matches.length; mi++) {
@@ -1571,19 +1424,23 @@ const App = {
     }
   },
 
-  /* ── 9f. FIXTURES SCREEN ─────────────────────────────────────────────── */
+  /* ── 10f. FIXTURES SCREEN ────────────────────────────────────────────── */
 
-  /**
-   * Render (or re-render) the fixtures screen.
-   * @param {number} [activeTab=0] - Tab index to keep active after re-render.
-   */
   _renderFixturesScreen(activeTab = 0) {
     const t  = State.activeTournament;
     const fx = State.fixtures;
 
+    // Build the fixtures screen header — include event name if present
+    const eventBadge = t.event_name
+      ? `<span style="font-size:11px;color:var(--text-tertiary);background:var(--bg-secondary);
+                      border-radius:4px;padding:2px 7px;border:0.5px solid var(--border-light);">
+           🏆 ${escHtml(t.event_name)}
+         </span>`
+      : '';
+
     document.getElementById('sched-title').textContent = t.name;
-    document.getElementById('sched-meta').textContent  =
-      `${State.teams.length} teams · ${t.format.replace(/_/g, ' ')}`;
+    document.getElementById('sched-meta').innerHTML    =
+      `${State.teams.length} teams · ${t.format.replace(/_/g, ' ')} ${eventBadge}`;
     UI.setStatusBadge(t.status);
 
     const realFx = fx.filter(f => !f.is_bye);
@@ -1632,8 +1489,7 @@ const App = {
     }
 
     const tabCount = document.querySelectorAll('.tab').length;
-    const safeTab  = Math.min(activeTab, tabCount - 1);
-    UI.switchTab(safeTab);
+    UI.switchTab(Math.min(activeTab, tabCount - 1));
   },
 
   _renderScheduleList(fixtures) {
@@ -1669,7 +1525,6 @@ const App = {
     ).join('');
   },
 
-  /** Render standings tables for all groups (wins + point differential) */
   _renderGroupStandings() {
     const groupNames = [...new Set(
       State.fixtures.filter(f => f.group_name).map(f => f.group_name)
@@ -1716,12 +1571,6 @@ const App = {
     }).join('');
   },
 
-  /**
-   * NBA-style bracket renderer.
-   *
-   * Renders rounds as vertical columns with SVG connector lines between
-   * matches that feed into each other.
-   */
   _renderNbaBracket(fixtures) {
     const rounds = {};
     fixtures.filter(f => !f.is_bye).forEach(f => {
@@ -1740,8 +1589,8 @@ const App = {
     const COL_GAP   = 40;
     const PADDING_V = 20;
 
-    const r1Count   = rounds[roundNums[0]].length;
-    const canvasH   = r1Count * CARD_H + (r1Count - 1) * CARD_GAP + PADDING_V * 2;
+    const r1Count = rounds[roundNums[0]].length;
+    const canvasH = r1Count * CARD_H + (r1Count - 1) * CARD_GAP + PADDING_V * 2;
 
     function cardCentreY(index, total) {
       const totalHeight = total * CARD_H + (total - 1) * CARD_GAP;
@@ -1754,12 +1603,12 @@ const App = {
       const total   = matches.length;
 
       const cards = matches.map((m, i) => {
-        const hn    = m.expand?.home_team?.name || 'TBD';
-        const an    = m.expand?.away_team?.name || 'TBD';
-        const isDone= m.status === 'completed';
-        const wH    = isDone && m.winner === m.home_team;
-        const wA    = isDone && m.winner === m.away_team;
-        const can   = !isDone && hn !== 'TBD' && an !== 'TBD';
+        const hn   = m.expand?.home_team?.name || 'TBD';
+        const an   = m.expand?.away_team?.name || 'TBD';
+        const isDone = m.status === 'completed';
+        const wH   = isDone && m.winner === m.home_team;
+        const wA   = isDone && m.winner === m.away_team;
+        const can  = !isDone && hn !== 'TBD' && an !== 'TBD';
 
         const totalH = total * CARD_H + (total - 1) * CARD_GAP;
         const startY = (canvasH - totalH) / 2;
@@ -1799,114 +1648,54 @@ const App = {
         const parentIdx = Math.floor(mi / 2);
         if (parentIdx >= nextRound.length) continue;
 
-        const fromY  = cardCentreY(mi, thisRound.length);
-        const toY    = cardCentreY(parentIdx, nextRound.length);
-        const midX   = colLeft + COL_GAP / 2;
+        const fromY = cardCentreY(mi, thisRound.length);
+        const toY   = cardCentreY(parentIdx, nextRound.length);
+        const midX  = colLeft + COL_GAP / 2;
 
-        svgLines += `<line x1="${colLeft}" y1="${fromY}" x2="${midX}" y2="${fromY}"
-                           stroke="var(--border-mid)" stroke-width="1.5" />`;
+        svgLines += `<line x1="${colLeft}" y1="${fromY}" x2="${midX}" y2="${fromY}" stroke="var(--border-mid)" stroke-width="1.5"/>`;
         if (mi % 2 === 0 && mi + 1 < thisRound.length) {
           const siblingY = cardCentreY(mi + 1, thisRound.length);
-          svgLines += `<line x1="${midX}" y1="${fromY}" x2="${midX}" y2="${siblingY}"
-                             stroke="var(--border-mid)" stroke-width="1.5" />`;
+          svgLines += `<line x1="${midX}" y1="${fromY}" x2="${midX}" y2="${siblingY}" stroke="var(--border-mid)" stroke-width="1.5"/>`;
         }
         if (mi % 2 === 0) {
-          svgLines += `<line x1="${midX}" y1="${toY}" x2="${colLeft + COL_GAP}" y2="${toY}"
-                             stroke="var(--border-mid)" stroke-width="1.5" />`;
+          svgLines += `<line x1="${midX}" y1="${toY}" x2="${colLeft + COL_GAP}" y2="${toY}" stroke="var(--border-mid)" stroke-width="1.5"/>`;
         }
       }
     }
 
     const totalW = roundNums.length * COL_W + (roundNums.length - 1) * COL_GAP + 2;
     const svg = `<svg class="nba-connectors" width="${totalW}" height="${canvasH + 24}"
-                       style="position:absolute;top:24px;left:0;pointer-events:none;overflow:visible">
+                      style="position:absolute;top:24px;left:0;pointer-events:none;overflow:visible">
       ${svgLines}
     </svg>`;
 
     return `
       <style>
-        .nba-bracket-wrap { overflow-x:auto; padding-bottom:1rem; }
-        .nba-bracket {
-          display:flex;
-          align-items:flex-start;
-          position:relative;
-          min-width:max-content;
-          padding-top:0;
-        }
-        .nba-round { display:flex; flex-direction:column; }
-        .nba-round-label {
-          font-size:10px;
-          font-weight:600;
-          text-transform:uppercase;
-          letter-spacing:0.07em;
-          color:var(--text-tertiary);
-          text-align:center;
-          padding-bottom:8px;
-          margin-bottom:0;
-          height:24px;
-          display:flex;
-          align-items:center;
-          justify-content:center;
-        }
-        .nba-col { position:relative; }
-        .nba-match {
-          position:absolute;
-          background:var(--bg-primary);
-          border:1px solid var(--border-light);
-          border-radius:var(--radius-md);
-          overflow:hidden;
-          transition:border-color 0.15s, box-shadow 0.15s;
-        }
-        .nba-match.clickable { cursor:pointer; }
-        .nba-match.clickable:hover {
-          border-color:var(--accent);
-          box-shadow:0 2px 10px rgba(29,158,117,0.18);
-        }
-        .nba-match.done { border-color:var(--accent); }
-        .nba-match.tbd-match { opacity:0.45; }
-        .nba-team {
-          display:flex;
-          align-items:center;
-          gap:6px;
-          padding:6px 8px;
-          height:34px;
-          font-size:12px;
-          min-width:0;
-        }
-        .nba-team.winner { background:var(--bg-success); }
-        .nba-team.tbd    { opacity:0.6; }
-        .nba-divider { height:1px; background:var(--border-light); }
-        .nba-seed {
-          font-size:10px;
-          color:var(--text-tertiary);
-          min-width:14px;
-          text-align:right;
-          flex-shrink:0;
-        }
-        .nba-name {
-          flex:1;
-          font-weight:500;
-          white-space:nowrap;
-          overflow:hidden;
-          text-overflow:ellipsis;
-          color:var(--text-primary);
-        }
-        .nba-team.winner .nba-name { color:var(--accent); font-weight:600; }
-        .nba-team.tbd .nba-name    { color:var(--text-tertiary); font-style:italic; font-weight:400; }
-        .nba-score {
-          font-size:12px;
-          font-weight:700;
-          color:var(--text-tertiary);
-          flex-shrink:0;
-          margin-left:4px;
-        }
-        .nba-team.winner .nba-score { color:var(--accent); }
-        .nba-connectors { position:absolute; top:0; left:0; pointer-events:none; }
+        .nba-bracket-wrap{overflow-x:auto;padding-bottom:1rem}
+        .nba-bracket{display:flex;align-items:flex-start;position:relative;min-width:max-content}
+        .nba-round{display:flex;flex-direction:column}
+        .nba-round-label{font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.07em;color:var(--text-tertiary);text-align:center;padding-bottom:8px;height:24px;display:flex;align-items:center;justify-content:center}
+        .nba-col{position:relative}
+        .nba-match{position:absolute;background:var(--bg-primary);border:1px solid var(--border-light);border-radius:var(--radius-md);overflow:hidden;transition:border-color .15s,box-shadow .15s}
+        .nba-match.clickable{cursor:pointer}
+        .nba-match.clickable:hover{border-color:var(--accent);box-shadow:0 2px 10px rgba(29,158,117,.18)}
+        .nba-match.done{border-color:var(--accent)}
+        .nba-match.tbd-match{opacity:.45}
+        .nba-team{display:flex;align-items:center;gap:6px;padding:6px 8px;height:34px;font-size:12px;min-width:0}
+        .nba-team.winner{background:var(--bg-success)}
+        .nba-team.tbd{opacity:.6}
+        .nba-divider{height:1px;background:var(--border-light)}
+        .nba-seed{font-size:10px;color:var(--text-tertiary);min-width:14px;text-align:right;flex-shrink:0}
+        .nba-name{flex:1;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;color:var(--text-primary)}
+        .nba-team.winner .nba-name{color:var(--accent);font-weight:600}
+        .nba-team.tbd .nba-name{color:var(--text-tertiary);font-style:italic;font-weight:400}
+        .nba-score{font-size:12px;font-weight:700;color:var(--text-tertiary);flex-shrink:0;margin-left:4px}
+        .nba-team.winner .nba-score{color:var(--accent)}
+        .nba-connectors{position:absolute;top:0;left:0;pointer-events:none}
       </style>
       <div class="nba-bracket-wrap">
         <div class="nba-bracket">
-          ${svg}
-          ${cols}
+          ${svg}${cols}
         </div>
       </div>`;
   },
@@ -1930,18 +1719,17 @@ const App = {
     return `<div class="match-card ${isDone ? 'completed' : ''} ${canEnter ? 'clickable' : ''}"
                  ${canEnter ? `onclick="App.openScoreModal('${fixture.id}')"` : ''}>
       <span class="match-num">M${num}</span>
-      <span class="team-a ${homeName === 'TBD' ? 'tbd' : ''} ${wHome ? 'winner-bold' : ''}">${escHtml(homeName)}</span>
+      <span class="team-a ${homeName==='TBD'?'tbd':''} ${wHome?'winner-bold':''}">${escHtml(homeName)}</span>
       <span class="vs">vs</span>
-      <span class="team-b ${awayName === 'TBD' ? 'tbd' : ''} ${wAway ? 'winner-bold' : ''}">${escHtml(awayName)}</span>
+      <span class="team-b ${awayName==='TBD'?'tbd':''} ${wAway?'winner-bold':''}">${escHtml(awayName)}</span>
       ${scoreHtml}
       ${editBtn}
     </div>`;
   },
 
-  /* ── 9g. SCORE ENTRY ─────────────────────────────────────────────────── */
+  /* ── 10g. SCORE ENTRY ────────────────────────────────────────────────── */
 
   async openScoreModal(fixtureId) {
-    Logger.info('openScoreModal', { fixtureId });
     try {
       const fixture = await pb.collection('fixtures').getOne(fixtureId, {
         expand: 'home_team,away_team,winner',
@@ -1953,7 +1741,6 @@ const App = {
   },
 
   async openEditModal(fixtureId) {
-    Logger.info('openEditModal', { fixtureId });
     try {
       const fixture = await pb.collection('fixtures').getOne(fixtureId, {
         expand: 'home_team,away_team,winner',
@@ -1964,7 +1751,6 @@ const App = {
     }
   },
 
-  /** Save (new or edited) result from the modal */
   async saveResult() {
     const fixture = State.activeFixture;
     const isEdit  = State.isEditMode;
@@ -1999,17 +1785,12 @@ const App = {
 
     try {
       const winnerId = homeScore > awayScore ? fixture.home_team : fixture.away_team;
-      Logger.info('saveResult', { fixtureId: fixture.id, homeScore, awayScore, isEdit, winnerId });
 
+      // A bracket match is either a pure elimination match, OR a group-stage
+      // knockout fixture (group_name is null/empty for knockout rounds)
       const isBracketMatch =
         State.activeTournament.format === 'elimination' ||
         (State.activeTournament.format === 'group_stage' && !fixture.group_name);
-
-      Logger.debug('saveResult: isBracketMatch', {
-        format      : State.activeTournament.format,
-        groupName   : fixture.group_name || null,
-        isBracketMatch,
-      });
 
       if (isEdit && isBracketMatch) {
         await DB.clearAdvancedWinner(fixture.tournament, fixture.round, fixture.match_number);
@@ -2018,26 +1799,14 @@ const App = {
       await DB.saveFixtureResult(fixture.id, homeScore, awayScore, winnerId);
 
       if (isBracketMatch) {
-        await DB.advanceWinnerElimination(
-          fixture.tournament, fixture.round, fixture.match_number, winnerId
-        );
-
-        // After advancing, verify the next fixture actually received the winner.
-        // Covers cases where a prior bug left the next fixture in a broken state
-        // (e.g. wrong round number in DB) — we find it by content rather than
-        // by the stored round/match fields, so it works on old and new data alike.
-        await DB.repairNextFixture(
-          fixture.tournament, fixture.round, fixture.match_number, winnerId
-        );
+        await DB.advanceWinnerElimination(fixture.tournament, fixture.round, fixture.match_number, winnerId);
+        await DB.repairNextFixture(fixture.tournament, fixture.round, fixture.match_number, winnerId);
       }
 
       let groupJustFinished = false;
       if (State.activeTournament.format === 'group_stage') {
         const seeded = await DB.seedKnockoutFromGroups(fixture.tournament, State.teams);
-        if (seeded) {
-          Logger.info('Knockout bracket seeded after group stage completion');
-          groupJustFinished = true;
-        }
+        if (seeded) groupJustFinished = true;
       }
 
       State.fixtures = await DB.getFixtures(fixture.tournament);
@@ -2052,13 +1821,7 @@ const App = {
       State.activeFixture = null;
       State.isEditMode    = false;
 
-      let targetTab = activeTabIdx;
-      if (groupJustFinished) {
-        targetTab = 2;
-        Logger.info('Auto-switching to Knockout tab after group stage completion');
-      }
-
-      App._renderFixturesScreen(targetTab);
+      App._renderFixturesScreen(groupJustFinished ? 2 : activeTabIdx);
       UI.showSuccess('fixtures-success', 'fixtures-success-msg',
         isEdit ? 'Result updated.' : 'Result saved.');
 
@@ -2073,7 +1836,7 @@ const App = {
 };
 
 /* =============================================================================
-   10. HELPERS
+   11. HELPERS
    ============================================================================= */
 function escHtml(str) {
   return String(str)
@@ -2082,7 +1845,7 @@ function escHtml(str) {
 }
 
 /* =============================================================================
-   11. GLOBAL ERROR HANDLERS
+   12. GLOBAL ERROR HANDLERS
    ============================================================================= */
 window.addEventListener('error', e => {
   Logger.error('Uncaught error', { message: e.message, file: e.filename, line: e.lineno });
@@ -2092,10 +1855,10 @@ window.addEventListener('unhandledrejection', e => {
 });
 
 /* =============================================================================
-   12. BOOT
+   13. BOOT
    ============================================================================= */
 document.addEventListener('DOMContentLoaded', () => {
-  Logger.info('DOM ready — booting Tournament Manager v4.2.0');
+  Logger.info('DOM ready — booting Tournament Manager v5.0.0');
   if (document.getElementById('screen-home')) {
     App.init().catch(e => Logger.error('App.init failed', { error: e.message }));
   }

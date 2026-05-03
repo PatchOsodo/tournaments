@@ -1,0 +1,6 @@
+2026/05/03 17:33:45 Server started at https://0.0.0.0:8090
+├─ REST API:  https://0.0.0.0:8090/api/
+└─ Dashboard: https://0.0.0.0:8090/_/
+2026/05/03 17:35:23 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/

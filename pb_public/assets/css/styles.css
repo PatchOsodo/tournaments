@@ -1,0 +1,984 @@
+/*
+ * =============================================================================
+ * BASKETBALL TOURNAMENT MANAGER — styles.css
+ * Version : 3.0.0
+ *
+ * TABLE OF CONTENTS
+ * -----------------
+ * 1.  CSS Custom Properties (Design Tokens)
+ * 2.  Reset & Base
+ * 3.  Layout
+ * 4.  App Header
+ * 5.  Screen Visibility
+ * 6.  Section Labels
+ * 7.  Cards
+ * 8.  Buttons
+ * 9.  Format Picker
+ * 10. Team Count Input
+ * 11. Team Name Inputs
+ * 12. Banners (Error / Success)
+ * 13. Home Screen — Tournament List
+ * 14. Fixtures Screen — Stats, Tabs, Rounds
+ * 15. Match Cards
+ * 16. Score Entry Modal
+ * 17. Bracket Page  (bracket.html)
+ * 18. Debug Log Panel
+ * 19. Utilities
+ * 20. Animations
+ * =============================================================================
+ */
+
+/* =============================================================================
+   1. CSS CUSTOM PROPERTIES (DESIGN TOKENS)
+   Light mode defaults. Dark mode overrides via prefers-color-scheme.
+   ============================================================================= */
+:root {
+  /* Backgrounds */
+  --bg-primary    : #ffffff;
+  --bg-secondary  : #f5f5f3;
+  --bg-tertiary   : #eeede8;
+  --bg-info       : #e6f1fb;
+  --bg-success    : #e6f7f1;
+  --bg-error      : #fdf0f0;
+  --bg-warning    : #fff8e6;
+
+  /* Text */
+  --text-primary  : #1a1a18;
+  --text-secondary: #5a5a56;
+  --text-tertiary : #9a9993;
+  --text-info     : #185fa5;
+  --text-success  : #0f6e56;
+  --text-error    : #9b2020;
+  --text-warning  : #7a5000;
+
+  /* Borders */
+  --border-light  : rgba(0,0,0,0.10);
+  --border-mid    : rgba(0,0,0,0.18);
+
+  /* Brand */
+  --accent        : #1D9E75;
+  --accent-dark   : #0F6E56;
+  --danger        : #d94f4f;
+  --warning       : #d4860a;
+
+  /* Border radii */
+  --radius-sm     : 5px;
+  --radius-md     : 8px;
+  --radius-lg     : 12px;
+  --radius-xl     : 16px;
+
+  /* Typography */
+  --font          : 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono     : 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg-primary    : #1e1e1c;
+    --bg-secondary  : #2a2a28;
+    --bg-tertiary   : #333330;
+    --bg-info       : #0c2540;
+    --bg-success    : #0a2318;
+    --bg-error      : #2a1010;
+    --bg-warning    : #2a1e00;
+    --text-primary  : #f0efea;
+    --text-secondary: #a8a89f;
+    --text-tertiary : #6a6a62;
+    --text-info     : #85b7eb;
+    --text-success  : #4ecda0;
+    --text-error    : #f5a0a0;
+    --text-warning  : #f0c060;
+    --border-light  : rgba(255,255,255,0.08);
+    --border-mid    : rgba(255,255,255,0.15);
+  }
+}
+
+/* =============================================================================
+   2. RESET & BASE
+   ============================================================================= */
+*, *::before, *::after {
+  box-sizing : border-box;
+  margin     : 0;
+  padding    : 0;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family : var(--font);
+  background  : var(--bg-tertiary);
+  color       : var(--text-primary);
+  min-height  : 100vh;
+  line-height : 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+input, button, select, textarea {
+  font-family : inherit;
+  font-size   : inherit;
+}
+
+/* =============================================================================
+   3. LAYOUT
+   ============================================================================= */
+.page-wrapper {
+  display         : flex;
+  justify-content : center;
+  padding         : 2rem 1rem 4rem;
+}
+
+.app {
+  width     : 100%;
+  max-width : 720px;
+}
+
+/* Bracket page gets a wider canvas */
+.app.wide {
+  max-width : 1100px;
+}
+
+/* =============================================================================
+   4. APP HEADER
+   ============================================================================= */
+.app-header {
+  display         : flex;
+  align-items     : center;
+  justify-content : space-between;
+  margin-bottom   : 2rem;
+  padding-bottom  : 1rem;
+  border-bottom   : 0.5px solid var(--border-light);
+}
+
+.app-header h1 {
+  font-size   : 18px;
+  font-weight : 500;
+}
+
+.app-header p {
+  font-size  : 12px;
+  color      : var(--text-tertiary);
+  margin-top : 2px;
+}
+
+.app-header-right {
+  display     : flex;
+  align-items : center;
+  gap         : 8px;
+}
+
+/* Connection indicator dot */
+.conn-dot {
+  width         : 8px;
+  height        : 8px;
+  border-radius : 50%;
+  background    : #ccc;
+  display       : inline-block;
+}
+.conn-dot.online  { background: var(--accent); }
+.conn-dot.offline { background: var(--danger); }
+
+.conn-label {
+  font-size : 11px;
+  color     : var(--text-tertiary);
+}
+
+/* =============================================================================
+   5. SCREEN VISIBILITY
+   Only .screen.active is shown. All others are hidden.
+   ============================================================================= */
+.screen         { display: none; }
+.screen.active  { display: block; }
+
+/* =============================================================================
+   6. SECTION LABELS
+   Small uppercase labels used above cards and sections.
+   ============================================================================= */
+.section-label {
+  font-size      : 11px;
+  font-weight    : 500;
+  letter-spacing : 0.08em;
+  text-transform : uppercase;
+  color          : var(--text-tertiary);
+  margin-bottom  : 0.75rem;
+}
+
+/* =============================================================================
+   7. CARDS
+   ============================================================================= */
+.card {
+  background    : var(--bg-primary);
+  border        : 0.5px solid var(--border-light);
+  border-radius : var(--radius-lg);
+  padding       : 1.25rem;
+  margin-bottom : 1rem;
+}
+
+/* =============================================================================
+   8. BUTTONS
+   ============================================================================= */
+.btn {
+  display         : inline-flex;
+  align-items     : center;
+  gap             : 6px;
+  padding         : 0 18px;
+  height          : 38px;
+  border-radius   : var(--radius-md);
+  font-size       : 13px;
+  font-weight     : 500;
+  cursor          : pointer;
+  border          : 0.5px solid var(--border-mid);
+  background      : transparent;
+  color           : var(--text-primary);
+  transition      : background 0.12s, opacity 0.12s, transform 0.08s;
+  white-space     : nowrap;
+  text-decoration : none;
+}
+.btn:hover    { background: var(--bg-secondary); }
+.btn:active   { transform: scale(0.98); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
+
+.btn.primary { background: var(--accent);  border-color: var(--accent);  color: #fff; }
+.btn.primary:hover { background: var(--accent-dark); }
+
+.btn.danger  { background: var(--danger);  border-color: var(--danger);  color: #fff; }
+.btn.danger:hover { background: #b83d3d; }
+
+.btn.ghost   { border-color: var(--border-light); color: var(--text-secondary); }
+
+/* Small variant */
+.btn.sm { height: 30px; padding: 0 12px; font-size: 12px; }
+
+.btn-row {
+  display   : flex;
+  gap       : 8px;
+  flex-wrap : wrap;
+  align-items: center;
+}
+
+/* =============================================================================
+   9. FORMAT PICKER
+   ============================================================================= */
+.format-grid {
+  display               : grid;
+  grid-template-columns : repeat(3, 1fr);
+  gap                   : 10px;
+  margin-bottom         : 1.25rem;
+}
+
+.format-card {
+  background    : var(--bg-primary);
+  border        : 0.5px solid var(--border-light);
+  border-radius : var(--radius-md);
+  padding       : 0.85rem 0.75rem;
+  cursor        : pointer;
+  transition    : border-color 0.15s;
+  text-align    : center;
+}
+.format-card:hover    { border-color: var(--border-mid); }
+.format-card.selected { border: 1.5px solid var(--accent); }
+.format-card .fmt-icon { font-size: 20px; margin-bottom: 6px; }
+.format-card .fmt-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.format-card .fmt-desc { font-size: 11px; color: var(--text-tertiary); margin-top: 3px; line-height: 1.4; }
+
+.format-suggestion {
+  font-size     : 12px;
+  color         : var(--text-info);
+  background    : var(--bg-info);
+  border-radius : var(--radius-md);
+  padding       : 6px 10px;
+  margin-bottom : 1.25rem;
+  display       : inline-block;
+}
+
+.format-card.disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* =============================================================================
+   10. TEAM COUNT INPUT
+   ============================================================================= */
+.team-count-row {
+  display       : flex;
+  align-items   : center;
+  gap           : 12px;
+  margin-bottom : 0.6rem;
+}
+
+.team-count-row label {
+  font-size   : 13px;
+  color       : var(--text-secondary);
+  white-space : nowrap;
+}
+
+.team-count-row input[type="number"] {
+  width         : 80px;
+  height        : 38px;
+  border        : 0.5px solid var(--border-mid);
+  border-radius : var(--radius-md);
+  background    : var(--bg-secondary);
+  color         : var(--text-primary);
+  font-size     : 18px;
+  font-weight   : 500;
+  text-align    : center;
+  outline       : none;
+  transition    : border-color 0.15s;
+}
+.team-count-row input[type="number"]:focus { border-color: var(--accent); }
+.team-count-row input[type="number"].input-error { border-color: var(--danger); }
+
+.team-count-hint {
+  font-size     : 11px;
+  color         : var(--text-tertiary);
+  margin-bottom : 1.25rem;
+}
+
+/* =============================================================================
+   11. TEAM NAME INPUTS
+   ============================================================================= */
+.team-inputs-grid {
+  display               : grid;
+  grid-template-columns : 1fr 1fr;
+  gap                   : 8px;
+  margin-bottom         : 1.25rem;
+}
+
+.team-input-wrap {
+  display       : flex;
+  align-items   : center;
+  gap           : 8px;
+  background    : var(--bg-secondary);
+  border        : 0.5px solid var(--border-light);
+  border-radius : var(--radius-md);
+  padding       : 0 10px;
+  height        : 38px;
+}
+
+.team-num {
+  font-size   : 11px;
+  font-weight : 500;
+  color       : var(--text-tertiary);
+  min-width   : 20px;
+}
+
+.team-input-wrap input {
+  border     : none;
+  background : transparent;
+  font-size  : 13px;
+  color      : var(--text-primary);
+  outline    : none;
+  flex       : 1;
+  height     : 100%;
+}
+
+/* Tournament name input (full width) */
+.tournament-name-input {
+  width         : 100%;
+  height        : 38px;
+  border        : 0.5px solid var(--border-mid);
+  border-radius : var(--radius-md);
+  background    : var(--bg-secondary);
+  color         : var(--text-primary);
+  font-size     : 13px;
+  padding       : 0 12px;
+  outline       : none;
+  transition    : border-color 0.15s;
+  margin-bottom : 1rem;
+}
+.tournament-name-input:focus { border-color: var(--accent); }
+
+/* =============================================================================
+   12. BANNERS (ERROR / SUCCESS)
+   ============================================================================= */
+.error-banner,
+.success-banner,
+.warning-banner {
+  display       : none;
+  align-items   : center;
+  gap           : 8px;
+  border-radius : var(--radius-md);
+  padding       : 8px 12px;
+  margin-bottom : 1rem;
+  font-size     : 12px;
+}
+.error-banner.visible,
+.success-banner.visible,
+.warning-banner.visible { display: flex; }
+
+.error-banner {
+  background : var(--bg-error);
+  border     : 0.5px solid #f5c0c0;
+  color      : var(--text-error);
+}
+.success-banner {
+  background : var(--bg-success);
+  border     : 0.5px solid #a0dfc4;
+  color      : var(--text-success);
+}
+.warning-banner {
+  background : var(--bg-warning);
+  border     : 0.5px solid #f0d080;
+  color      : var(--text-warning);
+}
+
+.banner-icon { font-size: 14px; flex-shrink: 0; }
+
+/* =============================================================================
+   13. HOME SCREEN — TOURNAMENT LIST
+   ============================================================================= */
+.tournament-list { margin-bottom: 1rem; }
+
+.tournament-item {
+  background      : var(--bg-primary);
+  border          : 0.5px solid var(--border-light);
+  border-radius   : var(--radius-md);
+  padding         : 0.85rem 1rem;
+  display         : flex;
+  align-items     : center;
+  justify-content : space-between;
+  margin-bottom   : 6px;
+  transition      : border-color 0.15s;
+}
+.tournament-item:hover { border-color: var(--border-mid); }
+
+.tournament-item-info h3 {
+  font-size   : 14px;
+  font-weight : 500;
+}
+.tournament-item-info p {
+  font-size  : 11px;
+  color      : var(--text-tertiary);
+  margin-top : 2px;
+}
+
+.tournament-item-actions {
+  display     : flex;
+  gap         : 6px;
+  align-items : center;
+  flex-wrap   : wrap;
+}
+
+.empty-state {
+  text-align  : center;
+  padding     : 3rem 1rem;
+  color       : var(--text-tertiary);
+  font-size   : 13px;
+  line-height : 1.8;
+}
+.empty-state .empty-icon {
+  font-size     : 32px;
+  margin-bottom : 0.75rem;
+  display       : block;
+}
+
+/* =============================================================================
+   14. FIXTURES SCREEN — STATS, TABS, ROUNDS
+   ============================================================================= */
+.schedule-header {
+  display         : flex;
+  align-items     : flex-start;
+  justify-content : space-between;
+  margin-bottom   : 1.25rem;
+  gap             : 1rem;
+}
+.schedule-title { font-size: 18px; font-weight: 500; }
+.schedule-meta  { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
+
+.stats-row {
+  display               : grid;
+  grid-template-columns : repeat(3, 1fr);
+  gap                   : 8px;
+  margin-bottom         : 1.25rem;
+}
+.stat-box {
+  background    : var(--bg-secondary);
+  border-radius : var(--radius-md);
+  padding       : 0.75rem;
+  text-align    : center;
+}
+.stat-val { font-size: 22px; font-weight: 500; }
+.stat-lbl { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+
+/* Tabs */
+.tab-row {
+  display       : flex;
+  gap           : 4px;
+  margin-bottom : 1.25rem;
+  background    : var(--bg-secondary);
+  border-radius : var(--radius-md);
+  padding       : 3px;
+}
+.tab {
+  flex          : 1;
+  padding       : 6px 0;
+  text-align    : center;
+  font-size     : 12px;
+  font-weight   : 500;
+  color         : var(--text-secondary);
+  cursor        : pointer;
+  border-radius : calc(var(--radius-md) - 2px);
+  border        : none;
+  background    : transparent;
+  transition    : background 0.12s, color 0.12s;
+}
+.tab.active {
+  background : var(--bg-primary);
+  color      : var(--text-primary);
+  border     : 0.5px solid var(--border-light);
+}
+.tab-panel        { display: none; }
+.tab-panel.active { display: block; }
+
+/* Round sections */
+.round-section { margin-bottom: 1.5rem; }
+
+.round-label {
+  font-size      : 11px;
+  font-weight    : 500;
+  letter-spacing : 0.06em;
+  text-transform : uppercase;
+  color          : var(--text-tertiary);
+  margin-bottom  : 8px;
+  display        : flex;
+  align-items    : center;
+  gap            : 8px;
+}
+.round-label::after {
+  content    : '';
+  flex       : 1;
+  height     : 0.5px;
+  background : var(--border-light);
+}
+
+/* =============================================================================
+   15. MATCH CARDS
+   ============================================================================= */
+.match-card {
+  background    : var(--bg-primary);
+  border        : 0.5px solid var(--border-light);
+  border-radius : var(--radius-md);
+  padding       : 0.65rem 1rem;
+  display       : flex;
+  align-items   : center;
+  gap           : 10px;
+  margin-bottom : 6px;
+  transition    : border-color 0.15s, background 0.12s;
+}
+.match-card.clickable { cursor: pointer; }
+.match-card.clickable:hover { border-color: var(--accent); }
+.match-card.completed { background: var(--bg-secondary); }
+
+.match-num {
+  font-size   : 11px;
+  color       : var(--text-tertiary);
+  min-width   : 22px;
+  font-weight : 500;
+}
+
+.team-a {
+  flex        : 1;
+  font-size   : 13px;
+  font-weight : 500;
+  text-align  : right;
+}
+
+.team-b {
+  flex        : 1;
+  font-size   : 13px;
+  font-weight : 500;
+}
+
+.vs {
+  font-size   : 11px;
+  color       : var(--text-tertiary);
+  font-weight : 500;
+  padding     : 0 6px;
+}
+
+.match-score {
+  font-size   : 12px;
+  font-weight : 500;
+  color       : var(--accent);
+  white-space : nowrap;
+  min-width   : 50px;
+  text-align  : center;
+}
+
+.match-action {
+  font-size : 11px;
+  color     : var(--text-tertiary);
+  min-width : 70px;
+  text-align: right;
+}
+
+.tbd         { color: var(--text-tertiary) !important; font-style: italic; }
+.winner-bold { font-weight: 700; color: var(--accent) !important; }
+
+/* Status badges */
+.status-badge {
+  font-size     : 10px;
+  font-weight   : 500;
+  padding       : 2px 7px;
+  border-radius : 99px;
+  white-space   : nowrap;
+}
+.badge-pending   { background: var(--bg-secondary); color: var(--text-tertiary); }
+.badge-active    { background: #FFF3CD; color: #7a5000; }
+.badge-completed { background: var(--bg-success); color: var(--text-success); }
+.badge-teal      { background: #E1F5EE; color: #0F6E56; }
+
+/* =============================================================================
+   16. SCORE ENTRY MODAL
+   ============================================================================= */
+.modal-overlay {
+  display         : none;
+  position        : fixed;
+  inset           : 0;
+  background      : rgba(0,0,0,0.45);
+  z-index         : 100;
+  justify-content : center;
+  align-items     : center;
+  padding         : 1rem;
+  backdrop-filter : blur(2px);
+}
+.modal-overlay.open { display: flex; }
+
+.modal {
+  background    : var(--bg-primary);
+  border        : 0.5px solid var(--border-light);
+  border-radius : var(--radius-xl);
+  padding       : 1.5rem;
+  width         : 100%;
+  max-width     : 380px;
+  box-shadow    : 0 8px 40px rgba(0,0,0,0.2);
+  animation     : modal-in 0.18s ease;
+}
+
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
+
+.modal h2 {
+  font-size     : 15px;
+  font-weight   : 500;
+  margin-bottom : 1.25rem;
+}
+
+.modal-teams {
+  display               : grid;
+  grid-template-columns : 1fr auto 1fr;
+  align-items           : center;
+  gap                   : 10px;
+  margin-bottom         : 1.25rem;
+}
+
+.modal-team-name {
+  font-size   : 13px;
+  font-weight : 500;
+  text-align  : center;
+}
+
+.modal-vs { font-size: 11px; color: var(--text-tertiary); }
+
+.score-inputs {
+  display               : grid;
+  grid-template-columns : 1fr auto 1fr;
+  align-items           : center;
+  gap                   : 10px;
+  margin-bottom         : 1.25rem;
+}
+
+.score-input {
+  width         : 100%;
+  height        : 56px;
+  border        : 0.5px solid var(--border-mid);
+  border-radius : var(--radius-md);
+  background    : var(--bg-secondary);
+  color         : var(--text-primary);
+  font-size     : 26px;
+  font-weight   : 500;
+  text-align    : center;
+  outline       : none;
+  transition    : border-color 0.15s;
+}
+.score-input:focus { border-color: var(--accent); }
+
+.score-sep {
+  font-size  : 20px;
+  color      : var(--text-tertiary);
+  text-align : center;
+}
+
+.modal-error {
+  font-size     : 12px;
+  color         : var(--text-error);
+  margin-bottom : 0.75rem;
+  display       : none;
+}
+.modal-error.visible { display: block; }
+
+/* Edit result note */
+.modal-edit-note {
+  font-size     : 11px;
+  color         : var(--text-warning);
+  background    : var(--bg-warning);
+  border-radius : var(--radius-sm);
+  padding       : 4px 8px;
+  margin-bottom : 0.75rem;
+  display       : none;
+}
+.modal-edit-note.visible { display: block; }
+
+/* =============================================================================
+   17. BRACKET PAGE (bracket.html)
+   ============================================================================= */
+
+/* Bracket canvas — horizontally scrollable */
+.bracket-page-header {
+  display         : flex;
+  align-items     : center;
+  justify-content : space-between;
+  margin-bottom   : 1.5rem;
+  flex-wrap       : wrap;
+  gap             : 0.75rem;
+}
+
+.bracket-page-title { font-size: 20px; font-weight: 500; }
+.bracket-page-meta  { font-size: 12px; color: var(--text-tertiary); margin-top: 3px; }
+
+.bracket-canvas-wrap {
+  overflow-x    : auto;
+  overflow-y    : visible;
+  padding-bottom: 1.5rem;
+}
+
+.bracket-canvas {
+  display     : flex;
+  align-items : flex-start;
+  gap         : 0;
+  min-width   : max-content;
+  padding     : 1rem 0.5rem;
+}
+
+/* Each round column */
+.bc-round {
+  display        : flex;
+  flex-direction : column;
+  min-width      : 180px;
+  padding        : 0 16px;
+  position       : relative;
+}
+
+/* Vertical connector line between rounds */
+.bc-round::after {
+  content    : '';
+  position   : absolute;
+  right      : 0;
+  top        : 10%;
+  height     : 80%;
+  width      : 1px;
+  background : var(--border-light);
+}
+.bc-round:last-child::after { display: none; }
+
+.bc-round-label {
+  font-size      : 10px;
+  text-transform : uppercase;
+  letter-spacing : 0.08em;
+  color          : var(--text-tertiary);
+  font-weight    : 600;
+  text-align     : center;
+  margin-bottom  : 16px;
+  padding-bottom : 8px;
+  border-bottom  : 0.5px solid var(--border-light);
+}
+
+.bc-matches {
+  display        : flex;
+  flex-direction : column;
+  gap            : 12px;
+  flex           : 1;
+  justify-content: space-around;
+}
+
+/* Individual bracket match card */
+.bc-match {
+  background    : var(--bg-primary);
+  border        : 1px solid var(--border-light);
+  border-radius : var(--radius-md);
+  overflow      : hidden;
+  transition    : border-color 0.15s, box-shadow 0.15s;
+  cursor        : default;
+}
+.bc-match.clickable { cursor: pointer; }
+.bc-match.clickable:hover {
+  border-color : var(--accent);
+  box-shadow   : 0 2px 12px rgba(29,158,117,0.15);
+}
+.bc-match.done { border-color: var(--accent); }
+.bc-match.tbd-match { opacity: 0.5; }
+
+/* Each team row within a bracket match */
+.bc-team {
+  display         : flex;
+  align-items     : center;
+  justify-content : space-between;
+  padding         : 7px 10px;
+  font-size       : 12px;
+  border-bottom   : 0.5px solid var(--border-light);
+  min-height      : 34px;
+}
+.bc-team:last-child { border-bottom: none; }
+
+.bc-team-name {
+  white-space   : nowrap;
+  overflow      : hidden;
+  text-overflow : ellipsis;
+  max-width     : 120px;
+}
+
+.bc-team.tbd .bc-team-name  { color: var(--text-tertiary); font-style: italic; }
+.bc-team.bye .bc-team-name  { color: var(--text-tertiary); font-style: italic; }
+.bc-team.winner { background: var(--bg-success); }
+.bc-team.winner .bc-team-name { font-weight: 600; color: var(--accent); }
+
+.bc-score {
+  font-size   : 12px;
+  font-weight : 600;
+  color       : var(--text-tertiary);
+  margin-left : 8px;
+  flex-shrink : 0;
+}
+.bc-team.winner .bc-score { color: var(--accent); }
+
+/* Champion display */
+.champion-box {
+  background    : linear-gradient(135deg, #1D9E75 0%, #0F6E56 100%);
+  border-radius : var(--radius-lg);
+  padding       : 1.5rem;
+  text-align    : center;
+  color         : #fff;
+  margin-top    : 1.5rem;
+}
+.champion-box .trophy { font-size: 36px; margin-bottom: 0.5rem; }
+.champion-box h2 { font-size: 13px; font-weight: 400; opacity: 0.8; margin-bottom: 4px; }
+.champion-box .champion-name { font-size: 22px; font-weight: 600; }
+
+/* Group stage bracket labels */
+.group-bracket-label {
+  font-size      : 12px;
+  font-weight    : 500;
+  color          : var(--text-secondary);
+  margin-bottom  : 8px;
+  padding-bottom : 6px;
+  border-bottom  : 0.5px solid var(--border-light);
+}
+
+/* No bracket state */
+.no-bracket {
+  text-align  : center;
+  padding     : 3rem 1rem;
+  color       : var(--text-tertiary);
+  font-size   : 13px;
+  line-height : 1.8;
+}
+
+/* =============================================================================
+   18. DEBUG LOG PANEL
+   ============================================================================= */
+.log-toggle {
+  font-size   : 11px;
+  color       : var(--text-tertiary);
+  cursor      : pointer;
+  user-select : none;
+  display     : inline-flex;
+  align-items : center;
+  gap         : 4px;
+  margin-top  : 1.5rem;
+  padding     : 4px 0;
+}
+.log-toggle:hover { color: var(--text-secondary); }
+
+.log-panel {
+  display       : none;
+  background    : var(--bg-secondary);
+  border        : 0.5px solid var(--border-light);
+  border-radius : var(--radius-md);
+  padding       : 10px 12px;
+  margin-top    : 6px;
+  max-height    : 220px;
+  overflow-y    : auto;
+  font-family   : var(--font-mono);
+  font-size     : 11px;
+  line-height   : 1.6;
+}
+.log-panel.open { display: block; }
+
+.log-entry         { display: flex; gap: 10px; }
+.log-time          { color: var(--text-tertiary); flex-shrink: 0; }
+.log-level-INFO    { color: #1D9E75; flex-shrink: 0; min-width: 40px; }
+.log-level-WARN    { color: #d4860a; flex-shrink: 0; min-width: 40px; }
+.log-level-ERROR   { color: var(--danger); flex-shrink: 0; min-width: 40px; }
+.log-level-DEBUG   { color: #7a9ec2; flex-shrink: 0; min-width: 40px; }
+.log-msg           { color: var(--text-secondary); word-break: break-all; }
+
+.log-actions       { display: flex; gap: 8px; margin-bottom: 6px; }
+.log-btn {
+  font-size     : 11px;
+  color         : var(--text-tertiary);
+  cursor        : pointer;
+  background    : none;
+  border        : 0.5px solid var(--border-light);
+  border-radius : 4px;
+  padding       : 2px 8px;
+}
+.log-btn:hover { color: var(--text-primary); border-color: var(--border-mid); }
+
+/* =============================================================================
+   19. UTILITIES
+   ============================================================================= */
+
+/* Loading spinner */
+.spinner {
+  display       : inline-block;
+  width         : 14px;
+  height        : 14px;
+  border        : 2px solid rgba(255,255,255,0.35);
+  border-top    : 2px solid #fff;
+  border-radius : 50%;
+  flex-shrink   : 0;
+}
+
+/* Dark spinner variant (for non-primary buttons) */
+.spinner.dark {
+  border-color     : rgba(0,0,0,0.15);
+  border-top-color : var(--text-primary);
+}
+
+/* Divider */
+.divider {
+  height     : 0.5px;
+  background : var(--border-light);
+  margin     : 1rem 0;
+}
+
+/* Muted text */
+.text-muted { color: var(--text-tertiary); font-size: 12px; }
+
+/* =============================================================================
+   20. ANIMATIONS
+   ============================================================================= */
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+.spinner { animation: spin 0.7s linear infinite; }
+
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.screen.active { animation: fade-in 0.18s ease; }

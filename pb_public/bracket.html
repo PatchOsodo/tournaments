@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Bracket View — Tournament Manager</title>
+<link rel="stylesheet" href="assets/css/styles.css">
+<style>
+  /* Bracket page specific print styles */
+  @media print {
+    .app-header-right,
+    .bracket-page-actions { display: none !important; }
+    body { background: #fff; }
+    .bc-match { break-inside: avoid; }
+  }
+</style>
+</head>
+<body>
+<div class="page-wrapper">
+<div class="app wide">
+
+  <!-- =====================================================================
+       BRACKET PAGE HEADER
+       ===================================================================== -->
+  <div class="app-header">
+    <div>
+      <div class="bracket-page-title" id="bracket-title">Loading...</div>
+      <div class="bracket-page-meta"  id="bracket-meta"></div>
+    </div>
+    <div class="app-header-right bracket-page-actions">
+      <span class="status-badge badge-pending" id="bracket-status">—</span>
+      <button class="btn sm ghost" onclick="BracketPage.refresh()">↻ Refresh</button>
+      <button class="btn sm ghost" onclick="BracketPage.print()">🖨 Print</button>
+      <a class="btn sm" href="index.html">← App</a>
+    </div>
+  </div>
+  <!-- =====================================================================
+       CHAMPION BOX
+       Only shown when tournament status = completed.
+       ===================================================================== -->
+  <div class="champion-box" id="champion-box" style="display:none;"></div>
+
+  <!-- =====================================================================
+       BRACKET CANVAS
+       Populated by bracket.js based on tournament format.
+       ===================================================================== -->
+  <div id="bracket-canvas-area">
+    <div class="no-bracket">
+      <span style="font-size:32px;display:block;margin-bottom:0.75rem">⏳</span>
+      Loading bracket...
+    </div>
+  </div>
+
+</div><!-- /.app -->
+</div><!-- /.page-wrapper -->
+
+<!-- Scripts -->
+<script src="assets/js/pocketbase.umd.js"></script>
+<script src="assets/js/bracket.js"></script>
+</body>
+</html>

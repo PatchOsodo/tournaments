@@ -1,0 +1,205 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Basketball Tournament Manager</title>
+<link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+<div class="page-wrapper">
+<div class="app">
+
+  <!-- =====================================================================
+       APP HEADER
+       ===================================================================== -->
+  <div class="app-header">
+    <div>
+      <h1>Tournament Manager</h1>
+      <p>Basketball · Local PocketBase</p>
+    </div>
+    <div class="app-header-right">
+      <span class="conn-dot" id="conn-dot"></span>
+      <span class="conn-label" id="conn-label">Connecting...</span>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       SCREEN 1: HOME
+       ===================================================================== -->
+  <div class="screen active" id="screen-home">
+    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+      <p class="section-label" style="margin:0">Tournaments</p>
+      <button class="btn primary sm" onclick="App.goToSetup()">+ New tournament</button>
+    </div>
+
+    <div class="error-banner" id="home-error">
+      <span class="banner-icon">!</span>
+      <span id="home-error-msg"></span>
+    </div>
+
+    <div class="tournament-list" id="tournament-list">
+      <div class="empty-state">
+        <span class="empty-icon">U</span>
+        Loading tournaments...
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       SCREEN 2: SETUP
+       ===================================================================== -->
+  <div class="screen" id="screen-setup">
+    <p class="section-label">New tournament</p>
+    <div class="card">
+
+      <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:6px;">
+        Tournament name
+      </label>
+      <input type="text" id="tournament-name" class="tournament-name-input"
+             placeholder="e.g. JBB 9.0 U16 BOYS" maxlength="60" />
+
+      <div class="team-count-row">
+        <label for="team-count">Number of teams</label>
+        <input type="number" id="team-count" min="3" max="32" value="8" placeholder="3–32" />
+      </div>
+      <div class="team-count-hint">Enter a number between 3 and 32</div>
+
+      <div class="error-banner" id="setup-error">
+        <span class="banner-icon">!</span>
+        <span id="setup-error-msg"></span>
+      </div>
+
+      <div id="format-suggestion" class="format-suggestion"></div>
+      <div class="format-grid" id="format-grid"></div>
+
+      <div class="btn-row">
+        <button class="btn" onclick="App.goToHome()">← Back</button>
+        <button class="btn primary" onclick="App.goToNames()">Continue →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       SCREEN 3: TEAM NAMES
+       ===================================================================== -->
+  <div class="screen" id="screen-names">
+    <p class="section-label">Team names</p>
+    <div class="card">
+      <div class="error-banner" id="names-error">
+        <span class="banner-icon">!</span>
+        <span id="names-error-msg"></span>
+      </div>
+      <div class="team-inputs-grid" id="team-inputs"></div>
+      <div class="btn-row">
+        <button class="btn" onclick="App.goToSetup()">← Back</button>
+        <button class="btn primary" id="btn-generate" onclick="App.generateFixtures()">
+          Generate &amp; save →
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =====================================================================
+       SCREEN 4: FIXTURES
+       ===================================================================== -->
+  <div class="screen" id="screen-fixtures">
+
+    <div class="schedule-header">
+      <div>
+        <div class="schedule-title" id="sched-title"></div>
+        <div class="schedule-meta" id="sched-meta"></div>
+      </div>
+      <div class="btn-row">
+        <span class="status-badge badge-pending" id="tournament-status-badge">pending</span>
+        <a id="bracket-page-link" class="btn sm ghost" href="#" target="_blank">
+          Full bracket
+        </a>
+        <button class="btn sm" onclick="App.goToHome()">← Home</button>
+      </div>
+    </div>
+
+    <div class="success-banner" id="fixtures-success">
+      <span class="banner-icon">✓</span>
+      <span id="fixtures-success-msg"></span>
+    </div>
+    <div class="error-banner" id="fixtures-error">
+      <span class="banner-icon">!</span>
+      <span id="fixtures-error-msg"></span>
+    </div>
+
+    <div class="stats-row" id="stats-row"></div>
+    <div class="tab-row" id="tab-row"></div>
+    <div id="tab-panels"></div>
+
+    <!-- Debug log panel -->
+    <div class="log-toggle" onclick="UI.toggleLog()">
+      <span id="log-arrow">>></span> Debug log
+    </div>
+    <div class="log-panel" id="log-panel">
+      <div class="log-actions">
+        <button class="log-btn" onclick="Logger.copyToClipboard()">Copy</button>
+        <button class="log-btn" onclick="Logger.clear()">Clear</button>
+      </div>
+      <div id="log-entries"></div>
+    </div>
+
+  </div>
+
+</div><!-- /.app -->
+</div><!-- /.page-wrapper -->
+
+<!-- =========================================================================
+     SCORE ENTRY MODAL
+     ========================================================================= -->
+<div class="modal-overlay" id="modal-overlay" onclick="UI.closeModal(event)">
+  <div class="modal">
+    <h2 id="modal-title">Enter match result</h2>
+
+    <!-- Edit warning — only shown when editing an existing result -->
+    <div class="modal-edit-note" id="modal-edit-note">
+      !!! You are editing an existing result. In an elimination bracket, the
+      previously advanced team will be removed from the next round.!!!
+    </div>
+
+    <div class="modal-teams">
+      <div class="modal-team-name" id="modal-home-name">Team A</div>
+      <div class="modal-vs">vs</div>
+      <div class="modal-team-name" id="modal-away-name">Team B</div>
+    </div>
+
+    <div class="score-inputs">
+      <input type="number" class="score-input" id="score-home" min="0" placeholder="0" />
+      <div class="score-sep">–</div>
+      <input type="number" class="score-input" id="score-away" min="0" placeholder="0" />
+    </div>
+
+    <div class="modal-error" id="modal-error"></div>
+
+    <div class="btn-row">
+      <button class="btn" onclick="UI.closeModal()">Cancel</button>
+      <button class="btn primary" id="btn-save-result" onclick="App.saveResult()">
+        Save result
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Scripts — PocketBase SDK first, then app logic -->
+<script src="assets/js/pocketbase.umd.js"></script>
+<script src="assets/js/main.js"></script>
+
+<script>
+  /**
+   * Update the "Full bracket" link href when the fixtures screen is opened.
+   * Runs after main.js has loaded App.openTournament.
+   */
+  const _origOpenTournament = App.openTournament.bind(App);
+  App.openTournament = async function(tournamentId) {
+    await _origOpenTournament(tournamentId);
+    const link = document.getElementById('bracket-page-link');
+    if (link) link.href = `bracket.html?id=${tournamentId}`;
+  };
+</script>
+</body>
+</html>

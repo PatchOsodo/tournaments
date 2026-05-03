@@ -1,4 +1,4 @@
 #!/bin/bash
-cd '/home/tournaments/JBB_TOURN'
+cd '/home/tournaments'
 nohup ./pocketbase serve --http=0.0.0.0:8090 &
  

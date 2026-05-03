@@ -31,7 +31,6 @@
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
       <p class="section-label" style="margin:0">Tournaments</p>
       <button class="btn primary sm" onclick="App.goToSetup()">+ New tournament</button>
-      <button class="btn sm ghost" onclick="App.openOrganiseModal()">Organise events</button>
     </div>
 
     <div class="error-banner" id="home-error">
@@ -45,10 +44,6 @@
         Loading tournaments...
       </div>
     </div>
-  </div>
-
-  <div id="home-success" class="success-banner">
-    <span id="home-success-msg"></span>
   </div>
 
   <!-- =====================================================================
@@ -189,35 +184,7 @@
     </div>
   </div>
 </div>
-  
-<!-- Organise Events Modal -->
-<div id="organise-overlay" style="
-  display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);
-  z-index:200;overflow-y:auto;padding:1rem;
-" onclick="App.closeOrganiseModal(event)">
-  <div style="
-    background:var(--bg-primary);border-radius:var(--radius-lg);
-    max-width:560px;margin:2rem auto;padding:1.5rem;
-    border:0.5px solid var(--border-light);
-  " onclick="event.stopPropagation()">
-    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
-      <h2 style="font-size:16px;font-weight:600;margin:0;">Organise into events</h2>
-      <button class="btn sm ghost" onclick="App.closeOrganiseModal()">✕</button>
-    </div>
-    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:1.25rem;">
-      Assign an event name to existing tournaments to group them together on the home screen.
-      Leave the field blank to keep a tournament standalone.
-    </p>
-    <div id="organise-list" style="display:grid;gap:8px;margin-bottom:1.25rem;">
-      <div style="color:var(--text-tertiary);font-size:13px;">Loading...</div>
-    </div>
-    <div id="organise-error" style="display:none;color:var(--danger);font-size:12px;margin-bottom:0.75rem;"></div>
-    <div style="display:flex;gap:8px;justify-content:flex-end;">
-      <button class="btn sm ghost" onclick="App.closeOrganiseModal()">Cancel</button>
-      <button class="btn sm primary" id="btn-save-organise" onclick="App.saveOrganise()">Save changes</button>
-    </div>
-  </div>
-</div>
+
 <!-- Scripts — PocketBase SDK first, then app logic -->
 <script src="assets/js/pocketbase.umd.js"></script>
 <script src="assets/js/main.js"></script>

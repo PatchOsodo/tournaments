@@ -41,6 +41,7 @@
  * 1.  Configuration
  * 2.  Logger
  * 3.  PocketBase Client
+ *      3.1 Auth Helpers for login 
  * 4.  UI Helpers
  * 5.  Application State
  * 6.  Format Configuration & suggestFormat
@@ -123,6 +124,25 @@ const Logger = (() => {
    3. POCKETBASE CLIENT
    ============================================================================= */
 const pb = new PocketBase(CONFIG.API_BASE_URL);
+
+/* =============================================================================
+   3. 1 AUTH HELPERS
+   ============================================================================= */
+const Auth = {
+  user()           { return pb.authStore.isValid ? pb.authStore.model : null; },
+  role()           { return Auth.user()?.role ?? 'visitor'; },
+  isSuperAdmin()   { return Auth.role() === 'super_admin'; },
+  isAdmin()        { return Auth.isSuperAdmin() || Auth.role() === 'tournament_admin'; },
+  isGuest()        { return Auth.role() === 'guest'; },
+  isVisitor()      { return !pb.authStore.isValid; },
+  canEnterScores() { return Auth.isAdmin(); },
+  canFavourite()   { return Auth.isGuest() || Auth.isAdmin(); },
+
+  logout() {
+    pb.authStore.clear();
+    window.location.href = 'login.html';
+  },
+};
 
 /* =============================================================================
    4. UI HELPERS
@@ -713,6 +733,30 @@ const DB = {
 
     return true;
   },
+  
+    async getFavourites() {
+      if (!Auth.canFavourite()) return [];
+      try {
+        return await pb.collection('favourites').getFullList({
+          filter : `user = "${Auth.user().id}"`,
+          expand : 'tournament',
+        });
+      } catch (e) {
+        Logger.warn('getFavourites failed', { error: e.message });
+        return [];
+        }
+      },
+
+    async addFavourite(tournamentId) {
+      return pb.collection('favourites').create({
+        user       : Auth.user().id,
+        tournament : tournamentId,
+      });
+    },
+
+    async removeFavourite(favouriteId) {
+      return pb.collection('favourites').delete(favouriteId);
+    },
 };
 
 /* =============================================================================
@@ -815,16 +859,30 @@ const App = {
 
   async init() {
     Logger.info('App.init', { version: CONFIG.VERSION });
+
+      // Auth check — redirect viewers to login if they try to access
+      // admin-only pages directly. Viewers are welcome on index.html
+      // but cannot create tournaments or enter scores.
+    const user = Auth.user();
+        Logger.info('Auth state', {
+        loggedIn : !!user,
+        role     : Auth.role(),
+        email    : user?.email ?? '(guest)',
+        });
+
+      // Render auth bar
+    App._renderAuthBar();
+
     const online = await DB.healthCheck();
     UI.setConnectionStatus(online);
     if (!online) {
-      UI.showError('home-error', 'home-error-msg',
-        'Cannot reach PocketBase. Ensure it is running: ./pocketbase serve');
+        UI.showError('home-error', 'home-error-msg',
+        'Cannot reach PocketBase. Ensure it is running.');
     }
     App._initSetupScreen();
     await migrateExistingTournaments();
     await App.loadTournaments();
-  },
+},
 
   /* ── 10b. HOME SCREEN ────────────────────────────────────────────────── */
 
@@ -841,8 +899,27 @@ const App = {
     Logger.info('loadTournaments');
     UI.clearError('home-error');
     const list = document.getElementById('tournament-list');
+    // Show/hide admin-only controls
+    const newBtn      = document.getElementById('btn-new-tournament');
+    const organiseBtn = document.getElementById('btn-organise');
+    if (newBtn)      newBtn.style.display      = Auth.isAdmin() ? '' : 'none';
+    if (organiseBtn) organiseBtn.style.display = Auth.isAdmin() ? '' : 'none';
     if (!list) return;
     list.innerHTML = '<div class="empty-state"><span class="empty-icon">⏳</span>Loading...</div>';
+    
+    try {
+      const [tournaments, favourites] = await Promise.all([
+        DB.getTournaments(),
+        DB.getFavourites(),
+      ]);
+
+      // Store favourites in state for rendering
+      State.favourites = favourites;
+      
+      catch (e) {
+        Logger.error('Failed to load favourites', { error: e.message });
+        // Hatustop hapa, tunaruhusu tournaments ziendelee kuload
+    }
 
     try {
       const tournaments = await DB.getTournaments();
@@ -890,6 +967,7 @@ const App = {
       list.innerHTML = '<div class="empty-state"><span class="empty-icon">⚠️</span>Failed to load.</div>';
     }
   },
+  
 
   /**
    * Render an event group — a collapsible header with all its categories.
@@ -989,10 +1067,12 @@ const App = {
           </div>
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
-          <span class="status-badge badge-${t.status}">${t.status}</span>
-          <button class="btn sm primary" onclick="App.openTournament('${t.id}')">Open</button>
-          <a class="btn sm ghost" href="bracket.html?id=${t.id}" target="_blank">Bracket</a>
-          <button class="btn sm danger" onclick="App.deleteTournament('${t.id}','${escHtml(t.name).replace(/'/g, "\\'")}')">Delete</button>
+            <span class="status-badge badge-${t.status}">${t.status}</span>
+            <button class="btn sm primary" onclick="App.openTournament('${t.id}')">Open</button>
+            <a class="btn sm ghost" href="bracket.html?id=${t.id}" target="_blank">Bracket</a>
+            ${Auth.isAdmin() ? `
+            <button class="btn sm danger" onclick="App.deleteTournament('${t.id}','${escHtml(t.name).replace(/'/g, "\\'")}')">
+            Delete</button>` : ''}
         </div>
       </div>`;
   },
@@ -1704,7 +1784,7 @@ const App = {
     const homeName = fixture.expand?.home_team?.name || 'TBD';
     const awayName = fixture.expand?.away_team?.name || 'TBD';
     const isDone   = fixture.status === 'completed';
-    const canEnter = !isDone && homeName !== 'TBD' && awayName !== 'TBD';
+    const canEnter = !isDone && homeName !== 'TBD' && awayName !== 'TBD' && Auth.isAdmin();
     const wHome    = isDone && fixture.winner === fixture.home_team;
     const wAway    = isDone && fixture.winner === fixture.away_team;
 
@@ -1831,6 +1911,33 @@ const App = {
       errEl.classList.add('visible');
     } finally {
       if (btn) { btn.disabled = false; btn.innerHTML = 'Save result'; }
+    }
+  },
+  
+/*---------------AUTH RENDER -------------------*/
+_renderAuthBar() {
+    const bar  = document.getElementById('auth-bar');
+    if (!bar) return;
+    const user = Auth.user();
+
+    if (user) {
+        const roleLabel = {
+            super_admin      : '⚡ Super Admin',
+            tournament_admin : '✏️ Tournament Admin',
+        }[user.role] || user.role;
+
+    bar.innerHTML = `
+        <span style="font-size:12px;color:var(--text-secondary);">
+            ${escHtml(user.email)}
+            <span style="margin-left:6px;font-size:10px;padding:2px 6px; border-radius:4px;background:var(--bg-secondary); color:var(--text-tertiary);border:0.5px solid var(--border-light);">
+                ${roleLabel}
+            </span>
+        </span>
+        <button class="btn sm ghost" onclick="Auth.logout()">Sign out</button>`;
+    } else {
+      bar.innerHTML = `
+        <span style="font-size:12px;color:var(--text-tertiary);">Viewing as guest</span>
+        <a href="login.html" class="btn sm primary">Sign in</a>`;
     }
   },
 };

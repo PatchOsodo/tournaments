@@ -1,6 +1,6 @@
 #!/bin/bash
 
-PID=$(pgrep -f "ssh pocketbase")
+PID=$(pgrep -f 'ssh -p 22 pocketbase')
 
 if [ -z "$PID" ]; then
   echo "No Connections to VPS"

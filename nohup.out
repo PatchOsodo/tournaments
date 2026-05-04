@@ -22,3 +22,38 @@
 2026/05/04 00:21:07 Server started at http://0.0.0.0:8090
 ├─ REST API:  http://0.0.0.0:8090/api/
 └─ Dashboard: http://0.0.0.0:8090/_/
+2026/05/04 12:55:27 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/
+2026/05/04 13:20:25 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/
+2026/05/04 13:30:55 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/
+2026/05/04 13:40:56 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/
+Error: failed to apply migration 1777885253_created_favourites.js: id: The model id is invalid or already exists.; name: Collection name must be unique (case insensitive)..
+Error: failed to apply migration 1777885253_created_favourites.js: id: The model id is invalid or already exists.; name: Collection name must be unique (case insensitive)..
+2026/05/04 14:01:56 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/
+2026/05/04 14:06:56 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/
+2026/05/04 14:09:34 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/
+2026/05/04 14:28:39 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/
+2026/05/04 15:22:55 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/
+2026/05/04 15:28:32 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/
+2026/05/04 15:39:25 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/

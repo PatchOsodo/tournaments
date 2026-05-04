@@ -1,0 +1,189 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Login — Tournament Manager</title>
+  <link rel="stylesheet" href="assets/css/styles.css">
+</head>
+<body>
+  <div class="login-wrap">
+    <div class="login-card">
+      <div class="login-logo">🏀</div>
+      <div class="login-title">Tournament Manager</div>
+      <div class="login-sub">JBB Live Scores & Brackets</div>
+
+      <!-- Tabs -->
+      <div class="auth-tabs">
+        <div class="auth-tab active" id="tab-signin" onclick="switchTab('signin')">Sign in</div>
+        <div class="auth-tab" id="tab-register" onclick="switchTab('register')">Register</div>
+      </div>
+
+      <!-- Sign in panel -->
+      <div class="auth-panel active" id="panel-signin">
+        <div class="login-field">
+          <label for="signin-email">Email</label>
+          <input type="email" id="signin-email" placeholder="you@example.com" autocomplete="email" />
+        </div>
+        <div class="login-field">
+          <label for="signin-password">Password</label>
+          <div class="password-wrap">
+            <input type="password" id="signin-password" placeholder="••••••••" autocomplete="current-password" />
+            <button class="password-toggle" onclick="togglePassword('signin-password', this)">👁</button>
+          </div>
+        </div>
+        <button class="login-btn" id="btn-signin" onclick="doSignIn()">Sign in</button>
+        <div class="auth-msg" id="signin-msg"></div>
+        <div class="login-guest">
+          No account? <a onclick="switchTab('register')" href="#">Register as a guest →</a>
+        </div>
+      </div>
+
+      <!-- Register panel -->
+      <div class="auth-panel" id="panel-register">
+        <div class="login-field">
+          <label for="reg-name">Your name</label>
+          <input type="text" id="reg-name" placeholder="e.g. John Kamau" maxlength="60" autocomplete="name" />
+        </div>
+        <div class="login-field">
+          <label for="reg-email">Email</label>
+          <input type="email" id="reg-email" placeholder="you@example.com" autocomplete="email" />
+        </div>
+        <div class="login-field">
+          <label for="reg-password">Password</label>
+          <div class="password-wrap">
+            <input type="password" id="reg-password" placeholder="At least 8 characters" autocomplete="new-password" />
+            <button class="password-toggle" onclick="togglePassword('reg-password', this)">👁</button>
+          </div>
+        </div>
+        <div class="login-field">
+          <label for="reg-confirm">Confirm password</label>
+          <div class="password-wrap">
+            <input type="password" id="reg-confirm" placeholder="Repeat password" autocomplete="new-password" />
+            <button class="password-toggle" onclick="togglePassword('reg-confirm', this)">👁</button>
+          </div>
+        </div>
+        <button class="login-btn" id="btn-register" onclick="doRegister()">Create account</button>
+        <div class="auth-msg" id="reg-msg"></div>
+        <div class="login-guest">
+          Already have an account? <a onclick="switchTab('signin')" href="#">Sign in →</a>
+        </div>
+      </div>
+
+      <!-- Guest view link -->
+      <div class="login-guest" style="margin-top:1.5rem;padding-top:1rem;border-top:0.5px solid var(--border-light);">
+        Just browsing? <a href="index.html">Continue as visitor →</a>
+      </div>
+    </div>
+  </div>
+
+  <script src="pocketbase.umd.js"></script>
+  <script>
+    const pb = new PocketBase(window.location.origin);
+
+    // Already logged in — go straight to app
+    if (pb.authStore.isValid) {
+      window.location.href = 'index.html';
+    }
+
+    function switchTab(tab) {
+      document.getElementById('tab-signin').classList.toggle('active',   tab === 'signin');
+      document.getElementById('tab-register').classList.toggle('active', tab === 'register');
+      document.getElementById('panel-signin').classList.toggle('active', tab === 'signin');
+      document.getElementById('panel-register').classList.toggle('active', tab === 'register');
+    }
+
+    function togglePassword(inputId, btn) {
+      const input = document.getElementById(inputId);
+      const show  = input.type === 'password';
+      input.type  = show ? 'text' : 'password';
+      btn.textContent = show ? '🙈' : '👁';
+    }
+
+    function showMsg(elId, text, type) {
+      const el = document.getElementById(elId);
+      el.textContent = text;
+      el.className   = `auth-msg ${type}`;
+    }
+
+    async function doSignIn() {
+      const email    = document.getElementById('signin-email').value.trim();
+      const password = document.getElementById('signin-password').value;
+      const btn      = document.getElementById('btn-signin');
+
+      if (!email || !password) {
+        showMsg('signin-msg', 'Please enter your email and password.', 'error');
+        return;
+      }
+
+      btn.disabled    = true;
+      btn.textContent = 'Signing in...';
+
+      try {
+        await pb.collection('users').authWithPassword(email, password);
+        window.location.href = 'index.html';
+      } catch (e) {
+        showMsg('signin-msg', 'Invalid email or password.', 'error');
+        btn.disabled    = false;
+        btn.textContent = 'Sign in';
+      }
+    }
+
+    async function doRegister() {
+      const name     = document.getElementById('reg-name').value.trim();
+      const email    = document.getElementById('reg-email').value.trim();
+      const password = document.getElementById('reg-password').value;
+      const confirm  = document.getElementById('reg-confirm').value;
+      const btn      = document.getElementById('btn-register');
+
+      // Validation
+      if (!name) {
+        showMsg('reg-msg', 'Please enter your name.', 'error'); return;
+      }
+      if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showMsg('reg-msg', 'Please enter a valid email address.', 'error'); return;
+      }
+      if (password.length < 8) {
+        showMsg('reg-msg', 'Password must be at least 8 characters.', 'error'); return;
+      }
+      if (password !== confirm) {
+        showMsg('reg-msg', 'Passwords do not match.', 'error'); return;
+      }
+
+      btn.disabled    = true;
+      btn.textContent = 'Creating account...';
+
+      try {
+        // Create the user with role = guest
+        await pb.collection('users').create({
+          name,
+          email,
+          password,
+          passwordConfirm : confirm,
+          role            : 'guest',
+        });
+
+        // Auto sign in after registration
+        await pb.collection('users').authWithPassword(email, password);
+        window.location.href = 'index.html';
+
+      } catch (e) {
+        const msg = e.data?.data?.email?.message
+          ?? e.data?.data?.password?.message
+          ?? 'Registration failed. Please try again.';
+        showMsg('reg-msg', msg, 'error');
+        btn.disabled    = false;
+        btn.textContent = 'Create account';
+      }
+    }
+
+    // Enter key support
+    document.addEventListener('keydown', e => {
+      if (e.key !== 'Enter') return;
+      const activePanel = document.querySelector('.auth-panel.active').id;
+      if (activePanel === 'panel-signin')    doSignIn();
+      if (activePanel === 'panel-register')  doRegister();
+    });
+  </script>
+</body>
+</html>

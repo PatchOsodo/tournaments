@@ -23,6 +23,8 @@
       <span class="conn-label" id="conn-label">Connecting...</span>
     </div>
   </div>
+  
+  <div id="auth-bar" style=" display:flex;align-items:center;gap:10px; padding:8px 1rem; background:var(--bg-secondary); border-bottom:0.5px solid var(--border-light); justify-content:flex-end;"></div>
 
   <!-- =====================================================================
        SCREEN 1: HOME
@@ -30,7 +32,7 @@
   <div class="screen active" id="screen-home">
     <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
       <p class="section-label" style="margin:0">Tournaments</p>
-      <button class="btn primary sm" onclick="App.goToSetup()">+ New tournament</button>
+      <button class="btn primary sm" id="btn-new-tournament" onclick="App.goToSetup()">+ New tournament</button>
     </div>
 
     <div class="error-banner" id="home-error">

@@ -828,8 +828,6 @@ async function _migrateTournament(tournament) {
   }
 }
 
-
-
 async function _migrateSeeding(tournamentId, allTeams, allFixtures, knockoutFx) {
   const groupNames    = [...new Set(allFixtures.filter(f => f.group_name && !f.is_bye).map(f => f.group_name))].sort();
   const groupRankings = groupNames.map(gName => _computeGroupStandings(allFixtures, allTeams, gName).slice(0, 2));
@@ -850,7 +848,6 @@ async function _migrateSeeding(tournamentId, allTeams, allFixtures, knockoutFx) 
       away_team: advancers[i*2+1].teamId,
     });
   }
-  
 }
 
 /* =============================================================================
@@ -877,6 +874,7 @@ const App = {
     App._renderAuthBar();
 
     const online = await DB.healthCheck();
+    UI.setConnectionStatus(online);
     if (!online) {
         UI.showError('home-error', 'home-error-msg',
         'Cannot reach PocketBase. Ensure it is running.');
@@ -885,21 +883,6 @@ const App = {
     await migrateExistingTournaments();
     await App.loadTournaments();
 },
-
-async toggleFavourite(tournamentId, existingFavouriteId) {
-    try {
-      if (existingFavouriteId) {
-        await DB.removeFavourite(existingFavouriteId);
-        Logger.info('Removed favourite', { tournamentId });
-      } else {
-        await DB.addFavourite(tournamentId);
-        Logger.info('Added favourite', { tournamentId });
-      }
-      await App.loadTournaments();  // re-render with updated star
-    } catch (e) {
-      Logger.error('toggleFavourite failed', { error: e.message });
-    }
-  },
 
   /* ── 10b. HOME SCREEN ────────────────────────────────────────────────── */
 
@@ -924,19 +907,6 @@ async toggleFavourite(tournamentId, existingFavouriteId) {
     if (!list) return;
     list.innerHTML = '<div class="empty-state"><span class="empty-icon">⏳</span>Loading...</div>';
     
-    /*try {
-      const [tournaments, favourites] = await Promise.all([
-        DB.getTournaments(),
-        DB.getFavourites(),
-      ]);
-
-      // Store favourites in state for rendering
-      State.favourites = favourites;
-      
-      catch (e) {
-        Logger.error('Failed to load favourites', { error: e.message });
-        // Hatustop hapa, tunaruhusu tournaments ziendelee kuload
-    }**/
 
     try {
       const tournaments = await DB.getTournaments();
@@ -965,28 +935,6 @@ async toggleFavourite(tournamentId, existingFavouriteId) {
       });
 
       let html = '';
-     /** 
-      // Favourites section for guests
-  if (Auth.canFavourite() && State.favourites.length) {
-    const favTournamentIds = new Set(
-      State.favourites.map(f =>
-        typeof f.tournament === 'object' ? f.tournament.id : f.tournament
-      )
-    );
-    const favTournaments = tournaments.filter(t => favTournamentIds.has(t.id));
-
-    if (favTournaments.length) {
-      html += `
-        <div style="margin-bottom:10px;">
-          <div style="font-size:11px;font-weight:600;text-transform:uppercase;
-                      letter-spacing:0.07em;color:var(--text-tertiary);
-                      padding:0 0 6px 0;">
-            ⭐ Following
-          </div>
-          ${favTournaments.map(t => App._renderTournamentItem(t)).join('')}
-        </div>`;
-    }
-  }**/
 
       // Render event groups first (alphabetically by event name)
       Object.keys(events).sort().forEach(eventName => {
@@ -1112,16 +1060,6 @@ async toggleFavourite(tournamentId, existingFavouriteId) {
             ${Auth.isAdmin() ? `
             <button class="btn sm danger" onclick="App.deleteTournament('${t.id}','${escHtml(t.name).replace(/'/g, "\\'")}')">
             Delete</button>` : ''}
-            ${Auth.canFavourite() ? (() => {
-                const fav = State.favourites.find(f =>
-                  (typeof f.tournament === 'object' ? f.tournament.id : f.tournament) === t.id
-                );
-                return fav
-                  ? `<button class="btn sm ghost" title="Unfavourite"
-                             onclick="App.toggleFavourite('${t.id}', '${fav.id}')">⭐</button>`
-                  : `<button class="btn sm ghost" title="Follow tournament"
-                             onclick="App.toggleFavourite('${t.id}', null)">☆</button>`;
-              })() : ''}
         </div>
       </div>`;
   },

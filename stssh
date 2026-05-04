@@ -1,0 +1,11 @@
+#!/bin/bash
+
+PID=$(pgrep -f "ssh pocketbase")
+
+if [ -z "$PID" ]; then
+  echo "No Connections to VPS"
+else
+  echo "Stopping Connections to VPS (PID: $PID)..."
+  kill -9 $PID
+  echo "Connections stopped."
+fi

@@ -1,7 +1,15 @@
+<<<<<<< HEAD
 /home/tournaments/pb_migrations/*
 /home/tournaments/pb_data/*
 pb_migrations/*
 pb_data/*
+=======
+/home/tournaments/pb_migrations
+/home/tournaments/pb_data
+pb_migrations
+pb_data
+nohup.out
+>>>>>>> fab18d3 (Respect gitignore)
 /home/tournaments/nohup.out
 /home/tournaments/connect
 connect

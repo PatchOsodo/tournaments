@@ -57,3 +57,6 @@ Error: failed to apply migration 1777885253_created_favourites.js: id: The model
 2026/05/04 15:39:25 Server started at http://0.0.0.0:8090
 ├─ REST API:  http://0.0.0.0:8090/api/
 └─ Dashboard: http://0.0.0.0:8090/_/
+2026/05/04 15:53:23 Server started at http://0.0.0.0:8090
+├─ REST API:  http://0.0.0.0:8090/api/
+└─ Dashboard: http://0.0.0.0:8090/_/

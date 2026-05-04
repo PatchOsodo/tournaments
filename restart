@@ -1,0 +1,9 @@
+git pull
+
+sh stop.sh
+
+sh Tourn.sh
+
+
+
+

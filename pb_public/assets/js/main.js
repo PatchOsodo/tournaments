@@ -965,28 +965,28 @@ async toggleFavourite(tournamentId, existingFavouriteId) {
       });
 
       let html = '';
-      
+     /** 
       // Favourites section for guests
-      if (Auth.canFavourite() && State.favourites.length) {
-        const favTournamentIds = new Set(
-          State.favourites.map(f =>
-            typeof f.tournament === 'object' ? f.tournament.id : f.tournament
-          )
-        );
-        const favTournaments = tournaments.filter(t => favTournamentIds.has(t.id));
+  if (Auth.canFavourite() && State.favourites.length) {
+    const favTournamentIds = new Set(
+      State.favourites.map(f =>
+        typeof f.tournament === 'object' ? f.tournament.id : f.tournament
+      )
+    );
+    const favTournaments = tournaments.filter(t => favTournamentIds.has(t.id));
 
-        if (favTournaments.length) {
-          html += `
-            <div style="margin-bottom:10px;">
-              <div style="font-size:11px;font-weight:600;text-transform:uppercase;
-                          letter-spacing:0.07em;color:var(--text-tertiary);
-                          padding:0 0 6px 0;">
-                ⭐ Following
-              </div>
-              ${favTournaments.map(t => App._renderTournamentItem(t)).join('')}
-            </div>`;
-        }
-      }
+    if (favTournaments.length) {
+      html += `
+        <div style="margin-bottom:10px;">
+          <div style="font-size:11px;font-weight:600;text-transform:uppercase;
+                      letter-spacing:0.07em;color:var(--text-tertiary);
+                      padding:0 0 6px 0;">
+            ⭐ Following
+          </div>
+          ${favTournaments.map(t => App._renderTournamentItem(t)).join('')}
+        </div>`;
+    }
+  }**/
 
       // Render event groups first (alphabetically by event name)
       Object.keys(events).sort().forEach(eventName => {
@@ -1970,28 +1970,26 @@ _renderAuthBar() {
     const user = Auth.user();
 
     if (user) {
-      const roleLabel = {
-        super_admin      : '⚡ Super Admin',
-        tournament_admin : '✏️ Tournament Admin',
-        guest            : '⭐ Guest',
-      }[user.role] || user.role;
+        const roleLabel = {
+            super_admin      : '⚡ Super Admin',
+            tournament_admin : '✏️ Tournament Admin',
+        }[user.role] || user.role;
 
-      bar.innerHTML = `
+    bar.innerHTML = `
         <span style="font-size:12px;color:var(--text-secondary);">
-          ${escHtml(user.name || user.email)}
-          <span style="margin-left:6px;font-size:10px;padding:2px 6px;
-                       border-radius:4px;background:var(--bg-secondary);
-                       color:var(--text-tertiary);border:0.5px solid var(--border-light);">
-            ${roleLabel}
-          </span>
+            ${escHtml(user.email)}
+            <span style="margin-left:6px;font-size:10px;padding:2px 6px; border-radius:4px;background:var(--bg-secondary); color:var(--text-tertiary);border:0.5px solid var(--border-light);">
+                ${roleLabel}
+            </span>
         </span>
         <button class="btn sm ghost" onclick="Auth.logout()">Sign out</button>`;
     } else {
       bar.innerHTML = `
-        <span style="font-size:12px;color:var(--text-tertiary);">Browsing as visitor</span>
-        <a href="login.html" class="btn sm primary">Sign in / Register</a>`;
+        <span style="font-size:12px;color:var(--text-tertiary);">Viewing as guest</span>
+        <a href="login.html" class="btn sm primary">Sign in</a>`;
     }
   },
+};
 
 /* =============================================================================
    11. HELPERS

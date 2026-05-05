@@ -16,23 +16,47 @@
   <div class="app-header">
     <div>
       <h1>Tournament Manager</h1>
-      <p>Basketball · Local PocketBase</p>
+      <p>Basketball · Live Scores</p>
     </div>
     <div class="app-header-right">
       <span class="conn-dot" id="conn-dot"></span>
       <span class="conn-label" id="conn-label">Connecting...</span>
     </div>
   </div>
-  
-  <div id="auth-bar" style=" display:flex;align-items:center;gap:10px; padding:8px 1rem; background:var(--bg-secondary); border-bottom:0.5px solid var(--border-light); justify-content:flex-end;"></div>
+
+  <!-- Auth bar — populated by App._renderAuthBar() -->
+  <div id="auth-bar" style="
+    display:flex;align-items:center;gap:10px;
+    padding:8px 1rem;
+    background:var(--bg-secondary);
+    border-bottom:0.5px solid var(--border-light);
+    justify-content:flex-end;
+  "></div>
 
   <!-- =====================================================================
        SCREEN 1: HOME
        ===================================================================== -->
   <div class="screen active" id="screen-home">
-    <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:0.75rem;">
+
+    <!-- FIX: header row now includes both New Tournament and Organise buttons -->
+    <div style="display:flex;align-items:center;justify-content:space-between;
+                margin-bottom:0.75rem;flex-wrap:wrap;gap:8px;">
       <p class="section-label" style="margin:0">Tournaments</p>
-      <button class="btn primary sm" id="btn-new-tournament" onclick="App.goToSetup()">+ New tournament</button>
+      <div style="display:flex;gap:8px;">
+        <!-- FIX: id added so Auth.isAdmin() show/hide works -->
+        <button class="btn sm ghost" id="btn-organise" onclick="App.openOrganiseModal()">
+          Organise events
+        </button>
+        <button class="btn primary sm" id="btn-new-tournament" onclick="App.goToSetup()">
+          + New tournament
+        </button>
+      </div>
+    </div>
+
+    <!-- Success banner for organise modal save confirmation -->
+    <div class="success-banner" id="home-success">
+      <span class="banner-icon">✓</span>
+      <span id="home-success-msg"></span>
     </div>
 
     <div class="error-banner" id="home-error">
@@ -42,7 +66,7 @@
 
     <div class="tournament-list" id="tournament-list">
       <div class="empty-state">
-        <span class="empty-icon">U</span>
+        <span class="empty-icon">⏳</span>
         Loading tournaments...
       </div>
     </div>
@@ -55,11 +79,14 @@
     <p class="section-label">New tournament</p>
     <div class="card">
 
-      <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:6px;">
-        Tournament name
+      <label for="tournament-name"
+             style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:6px;">
+        Tournament / Category name
       </label>
       <input type="text" id="tournament-name" class="tournament-name-input"
-             placeholder="e.g. JBB 9.0 U16 BOYS" maxlength="60" />
+             placeholder="e.g. U16 Boys" maxlength="60" />
+
+      <!-- Event-name field is injected here by App._initSetupScreen() -->
 
       <div class="team-count-row">
         <label for="team-count">Number of teams</label>
@@ -110,7 +137,7 @@
     <div class="schedule-header">
       <div>
         <div class="schedule-title" id="sched-title"></div>
-        <div class="schedule-meta" id="sched-meta"></div>
+        <div class="schedule-meta"  id="sched-meta"></div>
       </div>
       <div class="btn-row">
         <span class="status-badge badge-pending" id="tournament-status-badge">pending</span>
@@ -131,12 +158,12 @@
     </div>
 
     <div class="stats-row" id="stats-row"></div>
-    <div class="tab-row" id="tab-row"></div>
+    <div class="tab-row"   id="tab-row"></div>
     <div id="tab-panels"></div>
 
     <!-- Debug log panel -->
     <div class="log-toggle" onclick="UI.toggleLog()">
-      <span id="log-arrow">>></span> Debug log
+      <span id="log-arrow">&gt;&gt;</span> Debug log
     </div>
     <div class="log-panel" id="log-panel">
       <div class="log-actions">
@@ -158,10 +185,9 @@
   <div class="modal">
     <h2 id="modal-title">Enter match result</h2>
 
-    <!-- Edit warning — only shown when editing an existing result -->
     <div class="modal-edit-note" id="modal-edit-note">
-      !!! You are editing an existing result. In an elimination bracket, the
-      previously advanced team will be removed from the next round.!!!
+      ⚠️ You are editing an existing result. In an elimination bracket, the
+      previously advanced team will be removed from the next round.
     </div>
 
     <div class="modal-teams">
@@ -187,21 +213,40 @@
   </div>
 </div>
 
+<!-- =========================================================================
+     ORGANISE EVENTS MODAL
+     ========================================================================= -->
+<div id="organise-overlay" style="
+  display:none;position:fixed;inset:0;background:rgba(0,0,0,0.55);
+  z-index:200;overflow-y:auto;padding:1rem;
+" onclick="App.closeOrganiseModal(event)">
+  <div style="
+    background:var(--bg-primary);border-radius:var(--radius-lg);
+    max-width:560px;margin:2rem auto;padding:1.5rem;
+    border:0.5px solid var(--border-light);
+  " onclick="event.stopPropagation()">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1.25rem;">
+      <h2 style="font-size:16px;font-weight:600;margin:0;">Organise into events</h2>
+      <button class="btn sm ghost" onclick="App.closeOrganiseModal()">✕</button>
+    </div>
+    <p style="font-size:13px;color:var(--text-secondary);margin-bottom:1.25rem;">
+      Assign an event name to existing tournaments to group them together.
+      Leave blank to keep a tournament standalone.
+    </p>
+    <div id="organise-list" style="display:grid;gap:8px;margin-bottom:1.25rem;">
+      <div style="color:var(--text-tertiary);font-size:13px;">Loading...</div>
+    </div>
+    <div id="organise-error" style="display:none;color:var(--danger);font-size:12px;margin-bottom:0.75rem;"></div>
+    <div style="display:flex;gap:8px;justify-content:flex-end;">
+      <button class="btn sm ghost" onclick="App.closeOrganiseModal()">Cancel</button>
+      <button class="btn sm primary" id="btn-save-organise" onclick="App.saveOrganise()">Save changes</button>
+    </div>
+  </div>
+</div>
+
 <!-- Scripts — PocketBase SDK first, then app logic -->
 <script src="assets/js/pocketbase.umd.js"></script>
 <script src="assets/js/main.js"></script>
 
-<script>
-  /**
-   * Update the "Full bracket" link href when the fixtures screen is opened.
-   * Runs after main.js has loaded App.openTournament.
-   */
-  const _origOpenTournament = App.openTournament.bind(App);
-  App.openTournament = async function(tournamentId) {
-    await _origOpenTournament(tournamentId);
-    const link = document.getElementById('bracket-page-link');
-    if (link) link.href = `bracket.html?id=${tournamentId}`;
-  };
-</script>
 </body>
 </html>

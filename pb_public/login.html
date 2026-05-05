@@ -5,18 +5,141 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Login — Tournament Manager</title>
   <link rel="stylesheet" href="assets/css/styles.css">
+  <style>
+    .login-wrap {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1rem;
+      background: var(--bg-secondary);
+    }
+    .login-card {
+      background: var(--bg-primary);
+      border: 0.5px solid var(--border-light);
+      border-radius: var(--radius-lg);
+      padding: 2rem;
+      width: 100%;
+      max-width: 400px;
+    }
+    .login-logo  { text-align:center;font-size:32px;margin-bottom:0.5rem; }
+    .login-title { text-align:center;font-size:18px;font-weight:600;color:var(--text-primary);margin-bottom:0.25rem; }
+    .login-sub   { text-align:center;font-size:12px;color:var(--text-tertiary);margin-bottom:1.5rem; }
+
+    .auth-tabs {
+      display: flex;
+      border-bottom: 1px solid var(--border-light);
+      margin-bottom: 1.5rem;
+    }
+    .auth-tab {
+      flex: 1;
+      padding: 8px;
+      font-size: 13px;
+      font-weight: 500;
+      text-align: center;
+      cursor: pointer;
+      color: var(--text-tertiary);
+      border-bottom: 2px solid transparent;
+      margin-bottom: -1px;
+      transition: color 0.15s, border-color 0.15s;
+    }
+    .auth-tab.active {
+      color: var(--accent);
+      border-bottom-color: var(--accent);
+    }
+    .auth-panel { display: none; }
+    .auth-panel.active { display: block; }
+
+    .login-field { margin-bottom: 1rem; }
+    .login-field label {
+      display: block;
+      font-size: 12px;
+      font-weight: 500;
+      color: var(--text-secondary);
+      margin-bottom: 5px;
+    }
+    .login-field input {
+      width: 100%;
+      padding: 10px 12px;
+      font-size: 14px;
+      border: 1px solid var(--border-light);
+      border-radius: var(--radius-md);
+      background: var(--bg-secondary);
+      color: var(--text-primary);
+      box-sizing: border-box;
+      transition: border-color 0.15s;
+    }
+    .login-field input:focus { outline:none;border-color:var(--accent); }
+
+    .login-btn {
+      width: 100%;
+      padding: 11px;
+      font-size: 14px;
+      font-weight: 600;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-md);
+      cursor: pointer;
+      margin-top: 0.5rem;
+      transition: opacity 0.15s;
+    }
+    .login-btn:hover    { opacity: 0.88; }
+    .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+    .auth-msg {
+      display: none;
+      font-size: 12px;
+      padding: 8px 12px;
+      border-radius: var(--radius-md);
+      margin-top: 0.75rem;
+    }
+    .auth-msg.error {
+      display: block;
+      background: #fef2f2;
+      border: 0.5px solid var(--danger);
+      color: var(--danger);
+    }
+    .auth-msg.success {
+      display: block;
+      background: var(--bg-success);
+      border: 0.5px solid var(--accent);
+      color: var(--accent);
+    }
+    .login-guest {
+      text-align: center;
+      margin-top: 1.25rem;
+      font-size: 12px;
+      color: var(--text-tertiary);
+    }
+    .login-guest a { color:var(--accent);text-decoration:none;font-weight:500;cursor:pointer; }
+
+    .password-wrap { position: relative; }
+    .password-toggle {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 14px;
+      cursor: pointer;
+      color: var(--text-tertiary);
+      background: none;
+      border: none;
+      padding: 2px;
+    }
+  </style>
 </head>
 <body>
   <div class="login-wrap">
     <div class="login-card">
       <div class="login-logo">🏀</div>
       <div class="login-title">Tournament Manager</div>
-      <div class="login-sub">JBB Live Scores & Brackets</div>
+      <div class="login-sub">JBB Live Scores &amp; Brackets</div>
 
       <!-- Tabs -->
       <div class="auth-tabs">
-        <div class="auth-tab active" id="tab-signin" onclick="switchTab('signin')">Sign in</div>
-        <div class="auth-tab" id="tab-register" onclick="switchTab('register')">Register</div>
+        <div class="auth-tab active" id="tab-signin"   onclick="switchTab('signin')">Sign in</div>
+        <div class="auth-tab"        id="tab-register" onclick="switchTab('register')">Register</div>
       </div>
 
       <!-- Sign in panel -->
@@ -29,13 +152,13 @@
           <label for="signin-password">Password</label>
           <div class="password-wrap">
             <input type="password" id="signin-password" placeholder="••••••••" autocomplete="current-password" />
-            <button class="password-toggle" onclick="togglePassword('signin-password', this)">👁</button>
+            <button class="password-toggle" onclick="togglePassword('signin-password', this)" type="button">👁</button>
           </div>
         </div>
         <button class="login-btn" id="btn-signin" onclick="doSignIn()">Sign in</button>
         <div class="auth-msg" id="signin-msg"></div>
         <div class="login-guest">
-          No account? <a onclick="switchTab('register')" href="#">Register as a guest →</a>
+          No account? <a onclick="switchTab('register')">Register as a guest →</a>
         </div>
       </div>
 
@@ -53,20 +176,20 @@
           <label for="reg-password">Password</label>
           <div class="password-wrap">
             <input type="password" id="reg-password" placeholder="At least 8 characters" autocomplete="new-password" />
-            <button class="password-toggle" onclick="togglePassword('reg-password', this)">👁</button>
+            <button class="password-toggle" onclick="togglePassword('reg-password', this)" type="button">👁</button>
           </div>
         </div>
         <div class="login-field">
           <label for="reg-confirm">Confirm password</label>
           <div class="password-wrap">
             <input type="password" id="reg-confirm" placeholder="Repeat password" autocomplete="new-password" />
-            <button class="password-toggle" onclick="togglePassword('reg-confirm', this)">👁</button>
+            <button class="password-toggle" onclick="togglePassword('reg-confirm', this)" type="button">👁</button>
           </div>
         </div>
         <button class="login-btn" id="btn-register" onclick="doRegister()">Create account</button>
         <div class="auth-msg" id="reg-msg"></div>
         <div class="login-guest">
-          Already have an account? <a onclick="switchTab('signin')" href="#">Sign in →</a>
+          Already have an account? <a onclick="switchTab('signin')">Sign in →</a>
         </div>
       </div>
 
@@ -77,9 +200,17 @@
     </div>
   </div>
 
+  <!-- FIX 1: Correct path matching index.html -->
   <script src="assets/js/pocketbase.umd.js"></script>
   <script>
-    const pb = new PocketBase(window.location.origin);
+    // FIX 2: Same dev/prod URL logic as main.js so localhost works
+    const API_BASE_URL =
+      window.location.hostname === 'localhost' ||
+      window.location.hostname === '127.0.0.1'
+        ? 'http://127.0.0.1:8090'
+        : window.location.origin;
+
+    const pb = new PocketBase(API_BASE_URL);
 
     // Already logged in — go straight to app
     if (pb.authStore.isValid) {
@@ -87,10 +218,10 @@
     }
 
     function switchTab(tab) {
-      document.getElementById('tab-signin').classList.toggle('active',   tab === 'signin');
-      document.getElementById('tab-register').classList.toggle('active', tab === 'register');
-      document.getElementById('panel-signin').classList.toggle('active', tab === 'signin');
-      document.getElementById('panel-register').classList.toggle('active', tab === 'register');
+      document.getElementById('tab-signin').classList.toggle('active',    tab === 'signin');
+      document.getElementById('tab-register').classList.toggle('active',  tab === 'register');
+      document.getElementById('panel-signin').classList.toggle('active',  tab === 'signin');
+      document.getElementById('panel-register').classList.toggle('active',tab === 'register');
     }
 
     function togglePassword(inputId, btn) {
@@ -101,7 +232,7 @@
     }
 
     function showMsg(elId, text, type) {
-      const el = document.getElementById(elId);
+      const el     = document.getElementById(elId);
       el.textContent = text;
       el.className   = `auth-msg ${type}`;
     }
@@ -123,6 +254,7 @@
         await pb.collection('users').authWithPassword(email, password);
         window.location.href = 'index.html';
       } catch (e) {
+        console.error('Sign in error:', e);
         showMsg('signin-msg', 'Invalid email or password.', 'error');
         btn.disabled    = false;
         btn.textContent = 'Sign in';
@@ -136,7 +268,6 @@
       const confirm  = document.getElementById('reg-confirm').value;
       const btn      = document.getElementById('btn-register');
 
-      // Validation
       if (!name) {
         showMsg('reg-msg', 'Please enter your name.', 'error'); return;
       }
@@ -154,7 +285,6 @@
       btn.textContent = 'Creating account...';
 
       try {
-        // Create the user with role = guest
         await pb.collection('users').create({
           name,
           email,
@@ -168,9 +298,15 @@
         window.location.href = 'index.html';
 
       } catch (e) {
-        const msg = e.data?.data?.email?.message
-          ?? e.data?.data?.password?.message
-          ?? 'Registration failed. Please try again.';
+        console.error('Register error:', e);
+        // FIX 3: better error extraction covering more PocketBase error shapes
+        const data = e?.data?.data ?? {};
+        const msg  =
+          data.email?.message    ??
+          data.password?.message ??
+          data.name?.message     ??
+          e?.message             ??
+          'Registration failed. Please try again.';
         showMsg('reg-msg', msg, 'error');
         btn.disabled    = false;
         btn.textContent = 'Create account';
@@ -180,9 +316,10 @@
     // Enter key support
     document.addEventListener('keydown', e => {
       if (e.key !== 'Enter') return;
-      const activePanel = document.querySelector('.auth-panel.active').id;
-      if (activePanel === 'panel-signin')    doSignIn();
-      if (activePanel === 'panel-register')  doRegister();
+      const panel = document.querySelector('.auth-panel.active');
+      if (!panel) return;
+      if (panel.id === 'panel-signin')   doSignIn();
+      if (panel.id === 'panel-register') doRegister();
     });
   </script>
 </body>

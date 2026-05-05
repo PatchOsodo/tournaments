@@ -2,6 +2,10 @@ git pull
 
 sh stop.sh
 
+sudo systemctl stop nginx.service
+
+sudo systemctl start nginx.service
+
 sh Tourn.sh
 
 

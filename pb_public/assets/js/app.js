@@ -1,764 +1,11 @@
 /**
  * =============================================================================
- * BASKETBALL TOURNAMENT MANAGER — main.js
- * Version : 5.0.2
+ * app.js — App controller + boot
  *
- * FIXES FROM v5.0.0 / v5.0.1
- * ---------------------------
- * 1. CONFIG.API_BASE_URL — now uses dev/prod switch (localhost → port 8090,
- *    production → window.location.origin). Fixes all local dev DB failures.
- * 2. State.favourites — added missing field; absence crashed loadTournaments.
- * 3. DB object structure — seedKnockoutFromGroups was missing trailing comma
- *    before getFavourites, causing Unexpected identifier syntax error.
- * 4. Migration functions — moved outside DB object (they are standalone async
- *    functions, not DB methods).
- * 5. loadTournaments — removed duplicate nested try/catch and duplicate
- *    DB.getTournaments() call; merged favourites fetch into single Promise.all.
- * 6. Favourites section — was orphaned outside loadTournaments; moved inside.
- * 7. _renderEventGroup — extra closing brace removed; was prematurely closing
- *    the App object, making _renderAuthBar and toggleFavourite unreachable.
- * 8. _renderAuthBar — now includes guest role label; user.name falls back to
- *    user.email without markdown link corruption.
- * 9. editBtn in _matchCard — now guarded by Auth.isSuperAdmin() so guests/visitors
- *    cannot see the edit button.
- * 10. openOrganiseModal / saveOrganise — added to App object (were missing).
- *
- * TABLE OF CONTENTS
- * -----------------
- * 1.  Configuration
- * 2.  Logger
- * 3.  PocketBase Client
- * 4.  Auth Helpers
- * 5.  UI Helpers
- * 6.  Application State
- * 7.  Format Configuration & suggestFormat
- * 8.  Fixture Generation Algorithms
- * 9.  Database Layer (DB)
- * 10. Migration
- * 11. App Controller
- * 12. Helpers
- * 13. Global Error Handlers
- * 14. Boot
+ * Depends on: config.js, logger.js, auth.js, state.js, generators.js, db.js
  * =============================================================================
  */
 
-/* =============================================================================
-   1. CONFIGURATION
-   ============================================================================= */
-const CONFIG = {
-  // Dev: PocketBase runs on port 8090, app served from a different port.
-  // Prod: Nginx proxies everything through the same origin (no port).
-  API_BASE_URL : window.location.hostname === 'localhost' ||
-                 window.location.hostname === '127.0.0.1'
-    ? 'http://127.0.0.1:8090'
-    : window.location.origin,
-  VERSION : '5.0.2',
-};
-
-/* =============================================================================
-   2. LOGGER
-   ============================================================================= */
-const Logger = (() => {
-  const entries = [];
-
-  function write(level, msg, ctx) {
-    const ts     = new Date().toLocaleTimeString('en-GB', { hour12: false });
-    const detail = ctx ? ' ' + JSON.stringify(ctx) : '';
-    entries.push({ ts, level, msg, detail });
-
-    const fn = { DEBUG: 'debug', INFO: 'info', WARN: 'warn', ERROR: 'error' }[level] || 'log';
-    console[fn](`[${ts}] [${level}] ${msg}`, ctx || '');
-
-    const container = document.getElementById('log-entries');
-    if (!container) return;
-    const row = document.createElement('div');
-    row.className = 'log-entry';
-    row.innerHTML =
-      `<span class="log-time">${ts}</span>` +
-      `<span class="log-level-${level}">${level}</span>` +
-      `<span class="log-msg">${escHtml(msg)}${escHtml(detail)}</span>`;
-    container.appendChild(row);
-    container.scrollTop = container.scrollHeight;
-  }
-
-  return {
-    debug          : (m, c) => write('DEBUG', m, c),
-    info           : (m, c) => write('INFO',  m, c),
-    warn           : (m, c) => write('WARN',  m, c),
-    error          : (m, c) => write('ERROR', m, c),
-    all            : ()     => [...entries],
-    asText         : ()     => entries.map(e => `[${e.ts}] [${e.level}] ${e.msg}${e.detail}`).join('\n'),
-    copyToClipboard: () => {
-      navigator.clipboard.writeText(Logger.asText())
-        .then(() => Logger.info('Log copied to clipboard'))
-        .catch(e  => Logger.error('Clipboard copy failed', { error: e.message }));
-    },
-    clear: () => {
-      entries.length = 0;
-      const c = document.getElementById('log-entries');
-      if (c) c.innerHTML = '';
-      Logger.info('Log cleared by user');
-    },
-  };
-})();
-
-/* =============================================================================
-   3. POCKETBASE CLIENT
-   ============================================================================= */
-const pb = new PocketBase(CONFIG.API_BASE_URL);
-
-/* =============================================================================
-   4. AUTH HELPERS
-   ============================================================================= */
-const Auth = {
-  user()           { return pb.authStore.isValid ? pb.authStore.model : null; },
-  role()           { return Auth.user()?.role ?? 'visitor'; },
-  isSuperAdmin()   { return Auth.role() === 'super_admin'; },
-  isAdmin()        { return Auth.isSuperAdmin() || Auth.role() === 'tournament_admin'; },
-  isGuest()        { return Auth.role() === 'guest'; },
-  isVisitor()      { return !pb.authStore.isValid; },
-  canEnterScores() { return Auth.isAdmin(); },
-  canFavourite()   { return Auth.isGuest() || Auth.isAdmin(); },
-
-  logout() {
-    pb.authStore.clear();
-    window.location.href = 'login.html';
-  },
-};
-
-/* =============================================================================
-   5. UI HELPERS
-   ============================================================================= */
-const UI = {
-
-  showScreen(id) {
-    Logger.debug('showScreen', { screen: id });
-    document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
-    const el = document.getElementById(id);
-    if (el) el.classList.add('active');
-  },
-
-  showError(bannerId, msgId, message) {
-    Logger.warn('showError', { banner: bannerId, message });
-    const b = document.getElementById(bannerId);
-    const m = document.getElementById(msgId);
-    if (b) b.classList.add('visible');
-    if (m) m.textContent = message;
-  },
-
-  clearError(bannerId) {
-    const el = document.getElementById(bannerId);
-    if (el) el.classList.remove('visible');
-  },
-
-  showSuccess(bannerId, msgId, message, delay = 4000) {
-    Logger.info('showSuccess', { message });
-    const b = document.getElementById(bannerId);
-    const m = document.getElementById(msgId);
-    if (b) b.classList.add('visible');
-    if (m) m.textContent = message;
-    setTimeout(() => { if (b) b.classList.remove('visible'); }, delay);
-  },
-
-  toggleLog() {
-    const panel = document.getElementById('log-panel');
-    const arrow = document.getElementById('log-arrow');
-    if (!panel) return;
-    const open = panel.classList.toggle('open');
-    if (arrow) arrow.textContent = open ? '▼' : '▶';
-  },
-
-  setConnectionStatus(online) {
-    const dot   = document.getElementById('conn-dot');
-    const label = document.getElementById('conn-label');
-    if (dot)   dot.className     = 'conn-dot ' + (online ? 'online' : 'offline');
-    if (label) label.textContent = online ? 'Connected' : 'Offline';
-  },
-
-  switchTab(idx) {
-    document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === idx));
-    document.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
-  },
-
-  setStatusBadge(status) {
-    const badge = document.getElementById('tournament-status-badge');
-    if (!badge) return;
-    badge.textContent = status;
-    badge.className   = `status-badge badge-${status}`;
-  },
-
-  openModal(fixture, isEdit = false) {
-    Logger.info('openModal', { fixtureId: fixture.id, isEdit });
-    State.activeFixture = fixture;
-    State.isEditMode    = isEdit;
-
-    document.getElementById('modal-home-name').textContent = fixture.expand?.home_team?.name || 'Home';
-    document.getElementById('modal-away-name').textContent = fixture.expand?.away_team?.name || 'Away';
-    document.getElementById('modal-title').textContent     = isEdit ? 'Edit result' : 'Enter match result';
-    document.getElementById('score-home').value = isEdit ? (fixture.home_score ?? '') : '';
-    document.getElementById('score-away').value = isEdit ? (fixture.away_score ?? '') : '';
-
-    const editNote = document.getElementById('modal-edit-note');
-    if (editNote) editNote.classList.toggle('visible', isEdit);
-
-    document.getElementById('modal-error').classList.remove('visible');
-    document.getElementById('modal-overlay').classList.add('open');
-    document.getElementById('score-home').focus();
-  },
-
-  closeModal(event) {
-    if (event && event.target !== document.getElementById('modal-overlay')) return;
-    document.getElementById('modal-overlay').classList.remove('open');
-    State.activeFixture = null;
-    State.isEditMode    = false;
-  },
-};
-
-/* =============================================================================
-   6. APPLICATION STATE
-   ============================================================================= */
-const State = {
-  activeTournament : null,
-  activeFixture    : null,
-  isEditMode       : false,
-  fixtures         : [],
-  teams            : [],
-  favourites       : [],   // FIX: was missing — caused crash in loadTournaments
-  setupData        : {
-    teamCount : 8,
-    format    : 'elimination',
-    name      : '',
-    eventName : '',
-    names     : [],
-  },
-};
-
-/* =============================================================================
-   7. FORMAT CONFIGURATION
-   ============================================================================= */
-const FORMATS = [
-  { id: 'round_robin', icon: '⟳', name: 'Round robin',  desc: 'Everyone plays everyone' },
-  { id: 'elimination', icon: '⌥', name: 'Elimination',  desc: 'Single bracket, best advance' },
-  { id: 'group_stage', icon: '⊞', name: 'Group stage',  desc: 'Groups → knockout' },
-];
-
-function suggestFormat(n) {
-  if (n <= 5)                return 'round_robin';
-  if ([4,8,16].includes(n)) return 'elimination';
-  return 'group_stage';
-}
-
-/* =============================================================================
-   8. FIXTURE GENERATION ALGORITHMS
-   ============================================================================= */
-
-function genRoundRobin(teams) {
-  Logger.debug('genRoundRobin', { count: teams.length });
-  const list  = teams.length % 2 === 1 ? [...teams, 'BYE'] : [...teams];
-  const total = list.length;
-  const rounds = [];
-
-  for (let r = 0; r < total - 1; r++) {
-    const matches = [];
-    for (let i = 0; i < total / 2; i++) {
-      const a = list[i], b = list[total - 1 - i];
-      if (a !== 'BYE' && b !== 'BYE') matches.push({ a, b, isBye: false });
-    }
-    if (matches.length) rounds.push({ label: `Round ${r + 1}`, matches });
-    list.splice(1, 0, list.pop());
-  }
-
-  const totalMatches = rounds.reduce((s, r) => s + r.matches.length, 0);
-  Logger.debug('genRoundRobin done', { rounds: rounds.length, totalMatches });
-  return { type: 'round_robin', rounds, totalMatches };
-}
-
-function genElimination(teams) {
-  Logger.debug('genElimination', { count: teams.length });
-
-  let size = 1;
-  while (size < teams.length) size *= 2;
-  const byes = size - teams.length;
-
-  const slots       = [...teams, ...Array(byes).fill('BYE')];
-  const totalRounds = Math.log2(size);
-  const allRounds   = [];
-
-  const round1Matches = [];
-  for (let i = 0; i < size; i += 2) {
-    const a           = slots[i];
-    const b           = slots[i + 1];
-    const isBye       = b === 'BYE';
-    const matchNumber = Math.floor(i / 2) + 1;
-
-    round1Matches.push({
-      a, b, isBye,
-      nextRound       : 2,
-      nextMatchNumber : Math.ceil(matchNumber / 2),
-      nextSlot        : matchNumber % 2 === 1 ? 'home' : 'away',
-    });
-  }
-
-  const r1Label = _roundLabel(round1Matches.length, totalRounds, 1);
-  allRounds.push({ roundNumber: 1, label: r1Label, matches: round1Matches });
-
-  let matchCount = size / 2;
-  for (let r = 2; r <= totalRounds; r++) {
-    matchCount = matchCount / 2;
-    const matches = [];
-    for (let m = 1; m <= matchCount; m++) {
-      matches.push({
-        a: 'TBD', b: 'TBD', isBye: false,
-        nextRound       : r < totalRounds ? r + 1 : null,
-        nextMatchNumber : r < totalRounds ? Math.ceil(m / 2) : null,
-        nextSlot        : m % 2 === 1 ? 'home' : 'away',
-      });
-    }
-    allRounds.push({ roundNumber: r, label: _roundLabel(matchCount, totalRounds, r), matches });
-  }
-
-  const totalMatches = round1Matches.filter(m => !m.isBye).length +
-    allRounds.slice(1).reduce((s, r) => s + r.matches.length, 0);
-
-  return { type: 'elimination', rounds: allRounds, totalMatches };
-}
-
-function _roundLabel(matchCount, totalRounds, roundNumber) {
-  const fromEnd = totalRounds - roundNumber + 1;
-  if (fromEnd === 1) return 'Final';
-  if (fromEnd === 2) return 'Semifinals';
-  if (fromEnd === 3) return 'Quarterfinals';
-  return `Round of ${matchCount * 2}`;
-}
-
-function genGroupStage(teams) {
-  Logger.debug('genGroupStage', { count: teams.length });
-  const numGroups = teams.length <= 8 ? 2 : teams.length <= 12 ? 3 : 4;
-  const groups    = Array.from({ length: numGroups }, () => []);
-  teams.forEach((t, i) => groups[i % numGroups].push(t));
-
-  const letters       = 'ABCDEFGH';
-  const groupFixtures = groups.map((g, gi) => ({
-    name   : `Group ${letters[gi]}`,
-    teams  : g,
-    rounds : genRoundRobin(g).rounds,
-  }));
-
-  const advancers = groups.map(g => g.slice(0, 2)).flat();
-  const knockout  = genElimination(advancers);
-
-  const totalGroupMatches = groupFixtures.reduce(
-    (s, g) => s + g.rounds.reduce((rs, r) => rs + r.matches.length, 0), 0
-  );
-  const totalMatches = totalGroupMatches + knockout.totalMatches;
-
-  return { type: 'group_stage', groupFixtures, knockout, totalMatches, numGroups };
-}
-
-function _computeGroupStandings(fixtures, teams, groupName) {
-  const allGroupFx = fixtures.filter(f => f.group_name === groupName && !f.is_bye);
-  if (!allGroupFx.length) return [];
-
-  const resolveId = (val) => {
-    if (!val) return null;
-    if (typeof val === 'object') return val.id ?? null;
-    return val;
-  };
-
-  const teamIdsInGroup = new Set();
-  allGroupFx.forEach(f => {
-    const hId = resolveId(f.home_team);
-    const aId = resolveId(f.away_team);
-    if (hId) teamIdsInGroup.add(hId);
-    if (aId) teamIdsInGroup.add(aId);
-  });
-
-  const standingsMap = {};
-  teamIdsInGroup.forEach(id => {
-    const teamRecord = teams.find(t => t.id === id);
-    standingsMap[id] = {
-      teamId: id,
-      name  : teamRecord?.name || `Team (${id.slice(0, 6)})`,
-      played: 0, wins: 0, losses: 0, ptsFor: 0, ptsAgainst: 0,
-      get pointDiff() { return this.ptsFor - this.ptsAgainst; },
-    };
-  });
-
-  allGroupFx.filter(f => f.status === 'completed').forEach(f => {
-    const home = standingsMap[resolveId(f.home_team)];
-    const away = standingsMap[resolveId(f.away_team)];
-    if (!home || !away) return;
-
-    home.played++; away.played++;
-    home.ptsFor    += (f.home_score || 0); home.ptsAgainst += (f.away_score || 0);
-    away.ptsFor    += (f.away_score || 0); away.ptsAgainst += (f.home_score || 0);
-
-    if ((f.home_score || 0) > (f.away_score || 0)) { home.wins++; away.losses++; }
-    else                                             { away.wins++; home.losses++; }
-  });
-
-  return Object.values(standingsMap).sort((a, b) => {
-    if (b.wins !== a.wins)           return b.wins - a.wins;
-    if (b.pointDiff !== a.pointDiff) return b.pointDiff - a.pointDiff;
-    return b.ptsFor - a.ptsFor;
-  });
-}
-
-/* =============================================================================
-   9. DATABASE LAYER
-   ============================================================================= */
-const DB = {
-
-  async healthCheck() {
-    try {
-      await pb.health.check();
-      Logger.info('PocketBase health OK');
-      return true;
-    } catch (e) {
-      Logger.error('PocketBase health failed', { error: e.message });
-      return false;
-    }
-  },
-
-  async getTournaments() {
-    return pb.collection('tournaments').getFullList({ sort: '-created' });
-  },
-
-  async getEvents() {
-    try {
-      const all = await pb.collection('tournaments').getFullList({ fields: 'event_name' });
-      const names = [...new Set(all.map(t => t.event_name).filter(Boolean))].sort();
-      return names;
-    } catch (e) {
-      Logger.warn('DB.getEvents failed', { error: e.message });
-      return [];
-    }
-  },
-
-  async createTournament(name, format, eventName = null) {
-    Logger.info('DB.createTournament', { name, format, eventName });
-    return pb.collection('tournaments').create({
-      name, format,
-      status     : 'pending',
-      event_name : eventName || null,
-    });
-  },
-
-  async updateTournament(id, data) {
-    return pb.collection('tournaments').update(id, data);
-  },
-
-  async deleteTournament(id) {
-    Logger.warn('DB.deleteTournament', { id });
-    return pb.collection('tournaments').delete(id);
-  },
-
-  async createTeam(tournamentId, name, seed, groupName) {
-    return pb.collection('teams').create({
-      tournament: tournamentId, name,
-      seed      : seed      ?? null,
-      group_name: groupName ?? null,
-    });
-  },
-
-  async getTeams(tournamentId) {
-    return pb.collection('teams').getFullList({
-      filter: `tournament = "${tournamentId}"`,
-      sort  : 'seed',
-    });
-  },
-
-  async createFixture(data) {
-    return pb.collection('fixtures').create(data);
-  },
-
-  async getFixtures(tournamentId) {
-    return pb.collection('fixtures').getFullList({
-      filter: `tournament = "${tournamentId}"`,
-      sort  : 'round,match_number',
-      expand: 'home_team,away_team,winner',
-    });
-  },
-
-  async saveFixtureResult(fixtureId, homeScore, awayScore, winnerId) {
-    Logger.info('DB.saveFixtureResult', { fixtureId, homeScore, awayScore, winnerId });
-    return pb.collection('fixtures').update(fixtureId, {
-      home_score: homeScore, away_score: awayScore,
-      winner: winnerId, status: 'completed',
-    });
-  },
-
-  async advanceWinnerElimination(tournamentId, currentRound, currentMatchNumber, winnerTeamId) {
-    const nextRound       = currentRound + 1;
-    const nextMatchNumber = Math.ceil(currentMatchNumber / 2);
-    const slot            = currentMatchNumber % 2 === 1 ? 'home_team' : 'away_team';
-
-    Logger.info('DB.advanceWinner', {
-      from: `R${currentRound}M${currentMatchNumber}`,
-      to  : `R${nextRound}M${nextMatchNumber}`, slot,
-    });
-
-    try {
-      const nextFx = await pb.collection('fixtures').getFullList({
-        filter: `tournament = "${tournamentId}" && round = ${nextRound} && match_number = ${nextMatchNumber}`,
-      });
-      if (!nextFx.length) { Logger.warn('advanceWinner: no next fixture'); return; }
-      await pb.collection('fixtures').update(nextFx[0].id, { [slot]: winnerTeamId });
-      Logger.info('Winner placed', { nextFixtureId: nextFx[0].id, slot });
-    } catch (e) {
-      Logger.warn('advanceWinner failed', { error: e.message });
-    }
-  },
-
-  async clearAdvancedWinner(tournamentId, currentRound, currentMatchNumber) {
-    const nextRound       = currentRound + 1;
-    const nextMatchNumber = Math.ceil(currentMatchNumber / 2);
-    const slot            = currentMatchNumber % 2 === 1 ? 'home_team' : 'away_team';
-
-    try {
-      const nextFx = await pb.collection('fixtures').getFullList({
-        filter: `tournament = "${tournamentId}" && round = ${nextRound} && match_number = ${nextMatchNumber}`,
-      });
-      if (!nextFx.length) return;
-      await pb.collection('fixtures').update(nextFx[0].id, {
-        [slot]: null, status: 'scheduled', winner: null,
-        home_score: null, away_score: null,
-      });
-    } catch (e) {
-      Logger.warn('clearAdvancedWinner failed', { error: e.message });
-    }
-  },
-
-  async repairNextFixture(tournamentId, currentRound, currentMatchNumber, winnerTeamId) {
-    const nextRound       = currentRound + 1;
-    const nextMatchNumber = Math.ceil(currentMatchNumber / 2);
-    const slot            = currentMatchNumber % 2 === 1 ? 'home_team' : 'away_team';
-
-    try {
-      const expected = await pb.collection('fixtures').getFullList({
-        filter: `tournament = "${tournamentId}" && round = ${nextRound} && match_number = ${nextMatchNumber} && !is_bye`,
-      });
-
-      if (expected.length) {
-        const fx      = expected[0];
-        const current = typeof fx[slot] === 'object' ? fx[slot]?.id : fx[slot];
-        if (current === winnerTeamId) return;
-        await pb.collection('fixtures').update(fx.id, { [slot]: winnerTeamId });
-        Logger.warn('repairNextFixture: corrected slot', { fixtureId: fx.id, slot });
-        return;
-      }
-
-      // Fallback: scan by position for old buggy round numbers
-      const allKnockout = await pb.collection('fixtures').getFullList({
-        filter: `tournament = "${tournamentId}" && group_name = "" && !is_bye`,
-        sort  : 'round,match_number',
-      });
-
-      const rounds          = [...new Set(allKnockout.map(f => f.round))].sort((a, b) => a - b);
-      const currentRoundIdx = rounds.indexOf(currentRound);
-      if (currentRoundIdx === -1 || currentRoundIdx + 1 >= rounds.length) return;
-
-      const actualNextRound  = rounds[currentRoundIdx + 1];
-      const nextRoundFx      = allKnockout.filter(f => f.round === actualNextRound).sort((a, b) => a.match_number - b.match_number);
-      const currentRoundFx   = allKnockout.filter(f => f.round === currentRound).sort((a, b) => a.match_number - b.match_number);
-      const positionInRound  = currentRoundFx.findIndex(f => f.match_number === currentMatchNumber);
-      const targetFixtureIdx = Math.floor(positionInRound / 2);
-      const targetSlot       = positionInRound % 2 === 0 ? 'home_team' : 'away_team';
-
-      if (targetFixtureIdx >= nextRoundFx.length) return;
-
-      const targetFx   = nextRoundFx[targetFixtureIdx];
-      const currentVal = typeof targetFx[targetSlot] === 'object' ? targetFx[targetSlot]?.id : targetFx[targetSlot];
-      if (currentVal === winnerTeamId) return;
-
-      await pb.collection('fixtures').update(targetFx.id, { [targetSlot]: winnerTeamId });
-      Logger.warn('repairNextFixture: patched via scan', { fixtureId: targetFx.id, slot: targetSlot });
-
-    } catch (e) {
-      Logger.warn('repairNextFixture failed', { error: e.message });
-    }
-  },
-
-  async seedKnockoutFromGroups(tournamentId, allTeams) {
-    Logger.info('DB.seedKnockoutFromGroups: checking group completion');
-
-    const freshFixtures = await pb.collection('fixtures').getFullList({
-      filter: `tournament = "${tournamentId}"`,
-      sort  : 'round,match_number',
-      expand: 'home_team,away_team,winner',
-    });
-
-    const groupFxAll = freshFixtures.filter(f => f.group_name && !f.is_bye);
-    if (!groupFxAll.length) return false;
-
-    if (!groupFxAll.every(f => f.status === 'completed')) return false;
-
-    const groupNames    = [...new Set(groupFxAll.map(f => f.group_name))].sort();
-    const groupRankings = groupNames.map(gName => {
-      const top2 = _computeGroupStandings(freshFixtures, allTeams, gName).slice(0, 2);
-      Logger.info(`${gName} top 2`, top2.map(s => `${s.name} W:${s.wins}`));
-      return top2;
-    });
-
-    const firsts  = groupRankings.map(g => g[0]);
-    const seconds = groupRankings.map(g => g[1]);
-    const advancers = [];
-    for (let i = 0; i < firsts.length; i++) {
-      advancers.push(firsts[i]);
-      advancers.push(seconds[(i + 1) % seconds.length]);
-    }
-
-    if (advancers.some(a => !a?.teamId)) {
-      Logger.error('seedKnockoutFromGroups: missing teamId — aborting');
-      return false;
-    }
-
-    const knockoutFx = freshFixtures
-      .filter(f => !f.group_name && !f.is_bye)
-      .sort((a, b) => a.round !== b.round ? a.round - b.round : a.match_number - b.match_number);
-
-    if (!knockoutFx.length) return false;
-
-    const firstKoRound = Math.min(...knockoutFx.map(f => f.round));
-    const firstRoundFx = knockoutFx
-      .filter(f => f.round === firstKoRound)
-      .sort((a, b) => a.match_number - b.match_number);
-
-    for (let i = 0; i < firstRoundFx.length; i++) {
-      await pb.collection('fixtures').update(firstRoundFx[i].id, {
-        home_team: advancers[i * 2].teamId,
-        away_team: advancers[i * 2 + 1].teamId,
-      });
-    }
-
-    return true;
-  },
-
-  // FIX: trailing comma was missing before this method causing syntax error
-  async getFavourites() {
-    if (!Auth.canFavourite()) return [];
-    try {
-      return await pb.collection('favourites').getFullList({
-        filter: `user = "${Auth.user().id}"`,
-        expand: 'tournament',
-      });
-    } catch (e) {
-      Logger.warn('getFavourites failed', { error: e.message });
-      return [];
-    }
-  },
-
-  async addFavourite(tournamentId) {
-    return pb.collection('favourites').create({
-      user      : Auth.user().id,
-      tournament: tournamentId,
-    });
-  },
-
-  async removeFavourite(favouriteId) {
-    return pb.collection('favourites').delete(favouriteId);
-  },
-
-};  // ← end of DB object
-
-/* =============================================================================
-   10. MIGRATION
-   FIX: These are standalone async functions — NOT inside the DB object.
-   ============================================================================= */
-async function migrateExistingTournaments() {
-  Logger.info('Migration: checking for broken tournaments');
-  let tournaments;
-  try {
-    tournaments = await pb.collection('tournaments').getFullList({ sort: '-created' });
-  } catch (e) {
-    Logger.error('Migration: failed to fetch', { error: e.message });
-    return;
-  }
-
-  const active = tournaments.filter(t => t.status === 'active' && t.format === 'group_stage');
-  for (const tournament of active) {
-    try { await _migrateTournament(tournament); }
-    catch (e) { Logger.error('Migration failed for tournament', { id: tournament.id, error: e.message }); }
-  }
-  Logger.info('Migration: complete');
-}
-
-async function _migrateTournament(tournament) {
-  const [allTeams, allFixtures] = await Promise.all([
-    pb.collection('teams').getFullList({ filter: `tournament = "${tournament.id}"`, sort: 'seed' }),
-    pb.collection('fixtures').getFullList({
-      filter: `tournament = "${tournament.id}"`,
-      sort  : 'round,match_number',
-      expand: 'home_team,away_team,winner',
-    }),
-  ]);
-
-  const groupFx    = allFixtures.filter(f => f.group_name && !f.is_bye);
-  const knockoutFx = allFixtures.filter(f => !f.group_name && !f.is_bye);
-  if (!groupFx.length || !knockoutFx.length) return;
-  if (!groupFx.every(f => f.status === 'completed')) return;
-
-  const firstKoRound    = Math.min(...knockoutFx.map(f => f.round));
-  const knockoutUnseeded = knockoutFx
-    .filter(f => f.round === firstKoRound)
-    .every(f => !f.home_team && !f.away_team);
-
-  if (knockoutUnseeded) {
-    await _migrateSeeding(tournament.id, allTeams, allFixtures, knockoutFx);
-    return;
-  }
-
-  const rounds    = [...new Set(knockoutFx.map(f => f.round))].sort((a, b) => a - b);
-  const completed = knockoutFx
-    .filter(f => f.status === 'completed' && f.winner)
-    .sort((a, b) => a.round - b.round || a.match_number - b.match_number);
-
-  for (const fx of completed) {
-    const idx = rounds.indexOf(fx.round);
-    if (idx === -1 || idx + 1 >= rounds.length) continue;
-
-    const nextRound      = rounds[idx + 1];
-    const currentRoundFx = knockoutFx.filter(f => f.round === fx.round).sort((a, b) => a.match_number - b.match_number);
-    const posInRound     = currentRoundFx.findIndex(f => f.id === fx.id);
-    const slot           = posInRound % 2 === 0 ? 'home_team' : 'away_team';
-    const nextRoundFx    = knockoutFx.filter(f => f.round === nextRound).sort((a, b) => a.match_number - b.match_number);
-    const nextFx         = nextRoundFx[Math.floor(posInRound / 2)];
-    if (!nextFx) continue;
-
-    const winnerId   = typeof fx.winner === 'object' ? fx.winner.id : fx.winner;
-    const currentVal = typeof nextFx[slot] === 'object' ? nextFx[slot]?.id : nextFx[slot];
-    if (currentVal === winnerId) continue;
-
-    await pb.collection('fixtures').update(nextFx.id, { [slot]: winnerId });
-    Logger.warn('Migration: fixed winner slot', { from: `R${fx.round}M${fx.match_number}`, slot });
-  }
-}
-
-async function _migrateSeeding(tournamentId, allTeams, allFixtures, knockoutFx) {
-  const groupNames    = [...new Set(allFixtures.filter(f => f.group_name && !f.is_bye).map(f => f.group_name))].sort();
-  const groupRankings = groupNames.map(gName => _computeGroupStandings(allFixtures, allTeams, gName).slice(0, 2));
-  const firsts        = groupRankings.map(g => g[0]);
-  const seconds       = groupRankings.map(g => g[1]);
-  const advancers     = [];
-  for (let i = 0; i < firsts.length; i++) {
-    advancers.push(firsts[i]);
-    advancers.push(seconds[(i + 1) % seconds.length]);
-  }
-  if (advancers.some(a => !a?.teamId)) { Logger.error('Migration: missing teamId'); return; }
-
-  const firstKoRound = Math.min(...knockoutFx.map(f => f.round));
-  const firstRoundFx = knockoutFx.filter(f => f.round === firstKoRound).sort((a, b) => a.match_number - b.match_number);
-  for (let i = 0; i < firstRoundFx.length; i++) {
-    await pb.collection('fixtures').update(firstRoundFx[i].id, {
-      home_team: advancers[i * 2].teamId,
-      away_team: advancers[i * 2 + 1].teamId,
-    });
-  }
-}
-
-/* =============================================================================
-   11. APP CONTROLLER
-   ============================================================================= */
 const App = {
 
   /* ── 11a. INITIALISATION ─────────────────────────────────────────────── */
@@ -781,6 +28,7 @@ const App = {
       UI.showError('home-error', 'home-error-msg',
         'Cannot reach PocketBase. Ensure it is running.');
     }
+
     App._initSetupScreen();
     await migrateExistingTournaments();
     await App.loadTournaments();
@@ -802,7 +50,6 @@ const App = {
     list.innerHTML = '<div class="empty-state"><span class="empty-icon">⏳</span>Loading...</div>';
 
     try {
-      // FIX: single Promise.all — no duplicate getTournaments() call
       const [tournaments, favourites] = await Promise.all([
         DB.getTournaments(),
         DB.getFavourites(),
@@ -834,7 +81,7 @@ const App = {
 
       let html = '';
 
-      // FIX: favourites section is INSIDE loadTournaments, not orphaned outside
+      // Favourites section for guests and admins
       if (Auth.canFavourite() && State.favourites.length) {
         const favIds = new Set(
           State.favourites.map(f =>
@@ -871,7 +118,6 @@ const App = {
     }
   },
 
-  // FIX: no extra closing brace after _renderEventGroup — App object stays open
   _renderEventGroup(eventName, categories) {
     const allDone     = categories.every(c => c.status === 'completed');
     const anyActive   = categories.some(c => c.status === 'active');
@@ -932,6 +178,13 @@ const App = {
                    onclick="App.toggleFavourite('${t.id}',null)">☆</button>`;
     })() : '';
 
+    // Delete only for super admins
+    const deleteBtn = Auth.isSuperAdmin() ? `
+      <button class="btn sm danger"
+              onclick="App.deleteTournament('${t.id}','${escHtml(t.name).replace(/'/g, "\\'")}')">
+        Delete
+      </button>` : '';
+
     return `
       <div style="
         display:flex;align-items:center;justify-content:space-between;
@@ -954,20 +207,16 @@ const App = {
           <span class="status-badge badge-${t.status}">${t.status}</span>
           <button class="btn sm primary" onclick="App.openTournament('${t.id}')">Open</button>
           <a class="btn sm ghost" href="bracket.html?id=${t.id}" target="_blank">Bracket</a>
-          ${Auth.isSuperAdmin() ? `
-            <button class="btn sm danger"
-                    onclick="App.deleteTournament('${t.id}','${escHtml(t.name).replace(/'/g, "\\'")}')">
-              Delete
-            </button>` : ''}
+          ${deleteBtn}
           ${favBtn}
         </div>
       </div>`;
   },
 
-  // FIX: _renderAuthBar is now correctly INSIDE the App object
   _renderAuthBar() {
-    const bar = document.getElementById('auth-bar');
-    if (!bar) return;
+    // Write to auth-controls (right side of auth bar) — left side has nav links
+    const ctrl = document.getElementById('auth-controls');
+    if (!ctrl) return;
     const user = Auth.user();
 
     if (user) {
@@ -977,10 +226,9 @@ const App = {
         guest            : '⭐ Guest',
       }[user.role] || user.role;
 
-      // FIX: user.name and user.email accessed as plain properties (no markdown links)
       const displayName = escHtml(user.name || user.email);
 
-      bar.innerHTML = `
+      ctrl.innerHTML = `
         <span style="font-size:12px;color:var(--text-secondary);">
           ${displayName}
           <span style="margin-left:6px;font-size:10px;padding:2px 6px;
@@ -991,19 +239,20 @@ const App = {
         </span>
         <button class="btn sm ghost" onclick="Auth.logout()">Sign out</button>`;
     } else {
-      bar.innerHTML = `
+      ctrl.innerHTML = `
         <span style="font-size:12px;color:var(--text-tertiary);">Browsing as visitor</span>
         <a href="login.html" class="btn sm primary">Sign in / Register</a>`;
     }
   },
 
-  // FIX: toggleFavourite is now correctly INSIDE the App object
   async toggleFavourite(tournamentId, existingFavouriteId) {
     try {
       if (existingFavouriteId) {
         await DB.removeFavourite(existingFavouriteId);
+        Logger.info('Removed favourite', { tournamentId });
       } else {
         await DB.addFavourite(tournamentId);
+        Logger.info('Added favourite', { tournamentId });
       }
       await App.loadTournaments();
     } catch (e) {
@@ -1046,7 +295,7 @@ const App = {
   /* ── 11c. SETUP SCREEN ───────────────────────────────────────────────── */
 
   goToSetup() {
-    State.setupData = { teamCount: 8, format: 'elimination', name: '', eventName: '', names: [] };
+    State.setupData = { teamCount: 8, format: 'elimination', name: '', eventName: '', names: [], masterRefs: [] };
     const tc = document.getElementById('team-count');
     const tn = document.getElementById('tournament-name');
     const en = document.getElementById('event-name');
@@ -1060,7 +309,7 @@ const App = {
 
   goToSetupForEvent(eventName) {
     Logger.info('goToSetupForEvent', { eventName });
-    State.setupData = { teamCount: 8, format: 'elimination', name: '', eventName, names: [] };
+    State.setupData = { teamCount: 8, format: 'elimination', name: '', eventName, names: [], masterRefs: [] };
     const tc = document.getElementById('team-count');
     const tn = document.getElementById('tournament-name');
     const en = document.getElementById('event-name');
@@ -1167,7 +416,7 @@ const App = {
 
   /* ── 11d. NAMES SCREEN ───────────────────────────────────────────────── */
 
-  goToNames() {
+  async goToNames() {
     UI.clearError('setup-error');
 
     const nameVal  = (document.getElementById('tournament-name')?.value || '').trim();
@@ -1190,15 +439,35 @@ const App = {
     State.setupData.eventName = eventVal;
     State.setupData.teamCount = n;
 
+    // Load master teams for autocomplete in name inputs
+    try {
+      State.masterTeams = await DB.getMasterTeams();
+      Logger.info('Master teams loaded for autocomplete', { count: State.masterTeams.length });
+    } catch (e) {
+      State.masterTeams = [];
+      Logger.warn('Could not load master teams', { error: e.message });
+    }
+
     const grid = document.getElementById('team-inputs');
     if (grid) {
-      grid.innerHTML = Array.from({ length: n }, (_, i) => `
+      // Build datalist of existing master team names for autocomplete
+      const datalist = `<datalist id="master-team-suggestions">
+        ${State.masterTeams.map(t => `<option value="${escHtml(t.name)}">`).join('')}
+      </datalist>`;
+
+      grid.innerHTML = datalist + Array.from({ length: n }, (_, i) => `
         <div class="team-input-wrap">
           <span class="team-num">${i + 1}</span>
-          <input type="text" placeholder="Team ${i + 1}" id="tn-${i}"
-                 value="${escHtml(State.setupData.names[i] || '')}" maxlength="30" />
+          <input type="text"
+                 placeholder="Team ${i + 1}"
+                 id="tn-${i}"
+                 value="${escHtml(State.setupData.names[i] || '')}"
+                 maxlength="30"
+                 list="master-team-suggestions"
+                 autocomplete="off" />
         </div>`).join('');
     }
+
     UI.showScreen('screen-names');
   },
 
@@ -1206,6 +475,7 @@ const App = {
 
   async generateFixtures() {
     UI.clearError('names-error');
+    Logger.info('generateFixtures');
 
     const names = Array.from({ length: State.setupData.teamCount }, (_, i) => {
       const el = document.getElementById(`tn-${i}`);
@@ -1233,15 +503,26 @@ const App = {
         State.setupData.format,
         State.setupData.eventName || null,
       );
+      Logger.info('Tournament created', { id: tournament.id });
 
       const teamMap   = {};
       const numGroups = State.setupData.format === 'group_stage'
         ? (names.length <= 8 ? 2 : names.length <= 12 ? 3 : 4) : null;
 
+      // Determine category for master team linking
+      const category = State.setupData.eventName || State.setupData.name;
+
       for (let i = 0; i < names.length; i++) {
         const groupName = numGroups ? 'ABCDEFGH'[i % numGroups] : null;
-        const team      = await DB.createTeam(tournament.id, names[i], i + 1, groupName);
+
+        // Get or create master team record — links returning teams automatically
+        const masterTeamId = await DB.getOrCreateMasterTeam(names[i], category);
+
+        const team = await DB.createTeam(
+          tournament.id, names[i], i + 1, groupName, masterTeamId
+        );
         teamMap[names[i]] = team.id;
+        Logger.debug('Team created', { name: names[i], masterTeamId, teamId: team.id });
       }
 
       let generated;
@@ -1262,7 +543,7 @@ const App = {
         `"${tournament.name}" created — ${generated.totalMatches} matches.`);
 
     } catch (e) {
-      Logger.error('generateFixtures failed', { error: e.message });
+      Logger.error('generateFixtures failed', { error: e.message, stack: e.stack });
       UI.showError('names-error', 'names-error-msg', `Save failed: ${e.message}`);
     } finally {
       if (btn) { btn.disabled = false; btn.innerHTML = 'Generate &amp; save →'; }
@@ -1270,6 +551,8 @@ const App = {
   },
 
   async _persistFixtures(tournamentId, generated, teamMap) {
+    Logger.info('_persistFixtures', { type: generated.type });
+
     if (generated.type === 'elimination') {
       const savedFixtureMap = {};
 
@@ -1302,6 +585,7 @@ const App = {
         const nextFx = savedFixtureMap[`R2M${m.nextMatchNumber}`];
         if (nextFx) {
           await pb.collection('fixtures').update(nextFx.id, { [slot]: teamMap[m.a] });
+          Logger.info('Bye winner seeded', { team: m.a, slot });
         }
       }
 
@@ -1472,12 +756,16 @@ const App = {
       const tableRows = rows.map((s, i) => {
         const adv = i < 2;
         return `<tr style="${adv ? 'background:var(--bg-success)' : ''}">
-          <td style="padding:6px 8px;font-size:12px;font-weight:500;color:${adv ? 'var(--accent)' : 'var(--text-secondary)'}">
+          <td style="padding:6px 8px;font-size:12px;font-weight:500;
+                     color:${adv ? 'var(--accent)' : 'var(--text-secondary)'}">
             ${i + 1}${adv ? ' ✓' : ''}
           </td>
-          <td style="padding:6px 8px;font-size:13px;font-weight:${adv ? '600' : '400'}">${escHtml(s.name)}</td>
+          <td style="padding:6px 8px;font-size:13px;font-weight:${adv ? '600' : '400'}">
+            ${escHtml(s.name)}
+          </td>
           <td style="padding:6px 8px;font-size:12px;text-align:center">${s.played}</td>
-          <td style="padding:6px 8px;font-size:12px;text-align:center;font-weight:600;color:var(--accent)">${s.wins}</td>
+          <td style="padding:6px 8px;font-size:12px;text-align:center;font-weight:600;
+                     color:var(--accent)">${s.wins}</td>
           <td style="padding:6px 8px;font-size:12px;text-align:center">${s.losses}</td>
           <td style="padding:6px 8px;font-size:12px;text-align:center;
                      color:${s.pointDiff >= 0 ? 'var(--accent)' : 'var(--danger)'}">
@@ -1492,7 +780,8 @@ const App = {
         </div>
         <div style="overflow-x:auto">
           <table style="width:100%;border-collapse:collapse;background:var(--bg-primary);
-                        border-radius:var(--radius-md);overflow:hidden;border:0.5px solid var(--border-light)">
+                        border-radius:var(--radius-md);overflow:hidden;
+                        border:0.5px solid var(--border-light)">
             <thead>
               <tr style="background:var(--bg-secondary)">
                 <th style="padding:6px 8px;font-size:10px;font-weight:500;color:var(--text-tertiary);text-align:left">#</th>
@@ -1638,7 +927,6 @@ const App = {
       ? `<span class="match-score">${fixture.home_score} – ${fixture.away_score}</span>`
       : canEnter ? `<span class="match-action">Tap to enter</span>` : '';
 
-    // FIX: edit button also guarded by Auth.isAdmin()
     const editBtn = isDone && Auth.isAdmin()
       ? `<button class="btn sm ghost" onclick="App.openEditModal('${fixture.id}')" title="Edit result">✏️</button>`
       : '';
@@ -1736,11 +1024,18 @@ const App = {
 
       State.fixtures = await DB.getFixtures(fixture.tournament);
 
+      // Check tournament completion
       const realFx  = State.fixtures.filter(f => !f.is_bye);
       const allDone = realFx.every(f => f.status === 'completed');
       const status  = allDone ? 'completed' : 'active';
       await DB.updateTournament(fixture.tournament, { status });
       State.activeTournament.status = status;
+
+      // Save team stats to databank when tournament completes
+      if (allDone) {
+        Logger.info('Tournament complete — saving team stats to databank');
+        await DB.saveTeamStats(fixture.tournament, State.fixtures, State.teams);
+      }
 
       document.getElementById('modal-overlay').classList.remove('open');
       State.activeFixture = null;
@@ -1751,7 +1046,7 @@ const App = {
         isEdit ? 'Result updated.' : 'Result saved.');
 
     } catch (e) {
-      Logger.error('saveResult failed', { error: e.message });
+      Logger.error('saveResult failed', { error: e.message, stack: e.stack });
       errEl.textContent = `Save failed: ${e.message}`;
       errEl.classList.add('visible');
     } finally {
@@ -1836,7 +1131,9 @@ const App = {
       document.getElementById('organise-overlay').style.display = 'none';
       await App.loadTournaments();
       UI.showSuccess('home-success', 'home-success-msg',
-        changeCount > 0 ? `${changeCount} tournament${changeCount === 1 ? '' : 's'} updated.` : 'No changes made.'
+        changeCount > 0
+          ? `${changeCount} tournament${changeCount === 1 ? '' : 's'} updated.`
+          : 'No changes made.'
       );
 
     } catch (e) {
@@ -1850,16 +1147,7 @@ const App = {
 };  // ← end of App object
 
 /* =============================================================================
-   12. HELPERS
-   ============================================================================= */
-function escHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
-}
-
-/* =============================================================================
-   13. GLOBAL ERROR HANDLERS
+   GLOBAL ERROR HANDLERS
    ============================================================================= */
 window.addEventListener('error', e => {
   Logger.error('Uncaught error', { message: e.message, file: e.filename, line: e.lineno });
@@ -1869,10 +1157,10 @@ window.addEventListener('unhandledrejection', e => {
 });
 
 /* =============================================================================
-   14. BOOT
+   BOOT
    ============================================================================= */
 document.addEventListener('DOMContentLoaded', () => {
-  Logger.info('DOM ready — booting Tournament Manager v5.0.2');
+  Logger.info('DOM ready — booting Tournament Manager v5.1.0');
   if (document.getElementById('screen-home')) {
     App.init().catch(e => Logger.error('App.init failed', { error: e.message }));
   }

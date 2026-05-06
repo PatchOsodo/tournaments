@@ -30,20 +30,26 @@
     padding:8px 1rem;
     background:var(--bg-secondary);
     border-bottom:0.5px solid var(--border-light);
-    justify-content:flex-end;
-  "></div>
+    justify-content:space-between;
+    flex-wrap:wrap;
+  ">
+    <!-- Left side: nav links -->
+    <div style="display:flex;gap:8px;">
+      <a href="stats.html" class="btn sm ghost">📊 Team Stats</a>
+    </div>
+    <!-- Right side: auth controls rendered by App._renderAuthBar() -->
+    <div id="auth-controls" style="display:flex;align-items:center;gap:10px;"></div>
+  </div>
 
   <!-- =====================================================================
        SCREEN 1: HOME
        ===================================================================== -->
   <div class="screen active" id="screen-home">
 
-    <!-- FIX: header row now includes both New Tournament and Organise buttons -->
     <div style="display:flex;align-items:center;justify-content:space-between;
                 margin-bottom:0.75rem;flex-wrap:wrap;gap:8px;">
       <p class="section-label" style="margin:0">Tournaments</p>
       <div style="display:flex;gap:8px;">
-        <!-- FIX: id added so Auth.isAdmin() show/hide works -->
         <button class="btn sm ghost" id="btn-organise" onclick="App.openOrganiseModal()">
           Organise events
         </button>
@@ -53,7 +59,6 @@
       </div>
     </div>
 
-    <!-- Success banner for organise modal save confirmation -->
     <div class="success-banner" id="home-success">
       <span class="banner-icon">✓</span>
       <span id="home-success-msg"></span>
@@ -86,7 +91,7 @@
       <input type="text" id="tournament-name" class="tournament-name-input"
              placeholder="e.g. U16 Boys" maxlength="60" />
 
-      <!-- Event-name field is injected here by App._initSetupScreen() -->
+      <!-- Event-name field injected here by App._initSetupScreen() -->
 
       <div class="team-count-row">
         <label for="team-count">Number of teams</label>
@@ -115,6 +120,9 @@
   <div class="screen" id="screen-names">
     <p class="section-label">Team names</p>
     <div class="card">
+      <p style="font-size:12px;color:var(--text-tertiary);margin-bottom:1rem;">
+        Previously registered teams will appear as suggestions as you type.
+      </p>
       <div class="error-banner" id="names-error">
         <span class="banner-icon">!</span>
         <span id="names-error-msg"></span>
@@ -141,6 +149,7 @@
       </div>
       <div class="btn-row">
         <span class="status-badge badge-pending" id="tournament-status-badge">pending</span>
+        <a href="stats.html" class="btn sm ghost">📊 Stats</a>
         <a id="bracket-page-link" class="btn sm ghost" href="#" target="_blank">
           Full bracket
         </a>
@@ -230,7 +239,7 @@
       <button class="btn sm ghost" onclick="App.closeOrganiseModal()">✕</button>
     </div>
     <p style="font-size:13px;color:var(--text-secondary);margin-bottom:1.25rem;">
-      Assign an event name to existing tournaments to group them together.
+      Assign an event name to group tournaments together.
       Leave blank to keep a tournament standalone.
     </p>
     <div id="organise-list" style="display:grid;gap:8px;margin-bottom:1.25rem;">
@@ -239,14 +248,32 @@
     <div id="organise-error" style="display:none;color:var(--danger);font-size:12px;margin-bottom:0.75rem;"></div>
     <div style="display:flex;gap:8px;justify-content:flex-end;">
       <button class="btn sm ghost" onclick="App.closeOrganiseModal()">Cancel</button>
-      <button class="btn sm primary" id="btn-save-organise" onclick="App.saveOrganise()">Save changes</button>
+      <button class="btn sm primary" id="btn-save-organise" onclick="App.saveOrganise()">
+        Save changes
+      </button>
     </div>
   </div>
 </div>
 
-<!-- Scripts — PocketBase SDK first, then app logic -->
+<!-- =========================================================================
+     SCRIPTS — load in dependency order
+     1. pocketbase.umd.js  — PocketBase SDK
+     2. config.js          — CONFIG + escHtml
+     3. logger.js          — Logger
+     4. auth.js            — pb client + Auth
+     5. state.js           — State, FORMATS, suggestFormat, UI
+     6. generators.js      — fixture generators
+     7. db.js              — DB + migration functions
+     8. app.js             — App controller + boot
+     ========================================================================= -->
 <script src="assets/js/pocketbase.umd.js"></script>
-<script src="assets/js/main.js"></script>
+<script src="assets/js/config.js"></script>
+<script src="assets/js/logger.js"></script>
+<script src="assets/js/auth.js"></script>
+<script src="assets/js/state.js"></script>
+<script src="assets/js/generators.js"></script>
+<script src="assets/js/db.js"></script>
+<script src="assets/js/app.js"></script>
 
 </body>
 </html>

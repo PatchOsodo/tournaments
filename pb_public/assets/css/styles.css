@@ -1,95 +1,100 @@
 /*
  * =============================================================================
  * BASKETBALL TOURNAMENT MANAGER — styles.css
- * Version : 3.0.0
+ * Version : 4.0.0
  *
  * TABLE OF CONTENTS
  * -----------------
  * 1.  CSS Custom Properties (Design Tokens)
  * 2.  Reset & Base
  * 3.  Layout
- * 4.  App Header
- * 5.  Screen Visibility
- * 6.  Section Labels
- * 7.  Cards
- * 8.  Buttons
- * 9.  Format Picker
- * 10. Team Count Input
- * 11. Team Name Inputs
- * 12. Banners (Error / Success)
- * 13. Home Screen — Tournament List
- * 14. Fixtures Screen — Stats, Tabs, Rounds
- * 15. Match Cards
- * 16. Score Entry Modal
- * 17. Bracket Page  (bracket.html)
- * 18. Debug Log Panel
- * 19. Utilities
- * 20. Animations
+ * 4.  Navigation (Top + Bottom)
+ * 5.  App Header
+ * 6.  Screen Visibility
+ * 7.  Section Labels
+ * 8.  Cards
+ * 9.  Buttons
+ * 10. Format Picker
+ * 11. Team Count Input
+ * 12. Team Name Inputs
+ * 13. Banners (Error / Success / Warning)
+ * 14. Home Screen — Tournament List
+ * 15. Fixtures Screen — Stats, Tabs, Rounds
+ * 16. Match Cards
+ * 17. Score Entry Modal
+ * 18. Bracket Page  (bracket.html)
+ * 19. Stats Page    (stats.html)
+ * 20. Login Page    (login.html)
+ * 21. Debug Log Panel
+ * 22. Utilities & Animations
+ * 23. Responsive Breakpoints
  * =============================================================================
  */
 
 /* =============================================================================
    1. CSS CUSTOM PROPERTIES (DESIGN TOKENS)
-   Light mode defaults. Dark mode overrides via prefers-color-scheme.
+   Light mode defaults. Dark mode via prefers-color-scheme.
    ============================================================================= */
 :root {
   /* Backgrounds */
-  --bg-primary    : #ffffff;
-  --bg-secondary  : #f5f5f3;
-  --bg-tertiary   : #eeede8;
-  --bg-info       : #e6f1fb;
-  --bg-success    : #e6f7f1;
-  --bg-error      : #fdf0f0;
-  --bg-warning    : #fff8e6;
+  --bg-primary   : #ffffff;
+  --bg-secondary : #f5f5f3;
+  --bg-tertiary  : #eeede8;
+  --bg-info      : #e6f1fb;
+  --bg-success   : #e6f7f1;
+  --bg-error     : #fdf0f0;
+  --bg-warning   : #fff8e6;
 
   /* Text */
-  --text-primary  : #1a1a18;
-  --text-secondary: #5a5a56;
-  --text-tertiary : #9a9993;
-  --text-info     : #185fa5;
-  --text-success  : #0f6e56;
-  --text-error    : #9b2020;
-  --text-warning  : #7a5000;
+  --text-primary   : #1a1a18;
+  --text-secondary : #5a5a56;
+  --text-tertiary  : #9a9993;
+  --text-info      : #185fa5;
+  --text-success   : #0f6e56;
+  --text-error     : #9b2020;
+  --text-warning   : #7a5000;
 
   /* Borders */
-  --border-light  : rgba(0,0,0,0.10);
-  --border-mid    : rgba(0,0,0,0.18);
+  --border-light : rgba(0, 0, 0, 0.10);
+  --border-mid   : rgba(0, 0, 0, 0.18);
 
   /* Brand */
-  --accent        : #1D9E75;
-  --accent-dark   : #0F6E56;
-  --danger        : #d94f4f;
-  --warning       : #d4860a;
+  --accent      : #1D9E75;
+  --accent-dark : #0F6E56;
+  --danger      : #d94f4f;
+  --warning     : #d4860a;
 
-  /* Border radii */
-  --radius-sm     : 5px;
-  --radius-md     : 8px;
-  --radius-lg     : 12px;
-  --radius-xl     : 16px;
+  /* Radii */
+  --radius-sm : 5px;
+  --radius-md : 8px;
+  --radius-lg : 12px;
+  --radius-xl : 16px;
 
   /* Typography */
-  --font          : 'Segoe UI', system-ui, -apple-system, sans-serif;
-  --font-mono     : 'Cascadia Code', 'Consolas', 'Courier New', monospace;
+  --font      : 'Segoe UI', system-ui, -apple-system, sans-serif;
+  --font-mono : 'Cascadia Code', 'Consolas', 'Courier New', monospace;
 }
 
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg-primary    : #1e1e1c;
-    --bg-secondary  : #2a2a28;
-    --bg-tertiary   : #333330;
-    --bg-info       : #0c2540;
-    --bg-success    : #0a2318;
-    --bg-error      : #2a1010;
-    --bg-warning    : #2a1e00;
-    --text-primary  : #f0efea;
-    --text-secondary: #a8a89f;
-    --text-tertiary : #6a6a62;
-    --text-info     : #85b7eb;
-    --text-success  : #4ecda0;
-    --text-error    : #f5a0a0;
-    --text-warning  : #f0c060;
-    --border-light  : rgba(255,255,255,0.08);
-    --border-mid    : rgba(255,255,255,0.15);
+    --bg-primary   : #1e1e1c;
+    --bg-secondary : #2a2a28;
+    --bg-tertiary  : #333330;
+    --bg-info      : #0c2540;
+    --bg-success   : #0a2318;
+    --bg-error     : #2a1010;
+    --bg-warning   : #2a1e00;
+
+    --text-primary   : #f0efea;
+    --text-secondary : #a8a89f;
+    --text-tertiary  : #6a6a62;
+    --text-info      : #85b7eb;
+    --text-success   : #4ecda0;
+    --text-error     : #f5a0a0;
+    --text-warning   : #f0c060;
+
+    --border-light : rgba(255, 255, 255, 0.08);
+    --border-mid   : rgba(255, 255, 255, 0.15);
   }
 }
 
@@ -105,18 +110,15 @@
 html { scroll-behavior: smooth; }
 
 body {
-  font-family : var(--font);
-  background  : var(--bg-tertiary);
-  color       : var(--text-primary);
-  min-height  : 100vh;
-  line-height : 1.5;
-  -webkit-font-smoothing: antialiased;
+  font-family            : var(--font);
+  background             : var(--bg-tertiary);
+  color                  : var(--text-primary);
+  min-height             : 100vh;
+  line-height            : 1.5;
+  -webkit-font-smoothing : antialiased;
 }
 
-input, button, select, textarea {
-  font-family : inherit;
-  font-size   : inherit;
-}
+input, button, select, textarea { font-family: inherit; font-size: inherit; }
 
 /* =============================================================================
    3. LAYOUT
@@ -133,60 +135,13 @@ input, button, select, textarea {
 }
 
 /* Bracket page gets a wider canvas */
-.app.wide {
-  max-width : 1100px;
-}
+.app.wide { max-width: 1100px; }
 
 /* =============================================================================
-   4. APP HEADER
-   ============================================================================= */
-.app-header {
-  display         : flex;
-  align-items     : center;
-  justify-content : space-between;
-  margin-bottom   : 2rem;
-  padding-bottom  : 1rem;
-  border-bottom   : 0.5px solid var(--border-light);
-}
-
-.app-header h1 {
-  font-size   : 18px;
-  font-weight : 500;
-}
-
-.app-header p {
-  font-size  : 12px;
-  color      : var(--text-tertiary);
-  margin-top : 2px;
-}
-
-.app-header-right {
-  display     : flex;
-  align-items : center;
-  gap         : 8px;
-}
-
-/* Connection indicator dot */
-.conn-dot {
-  width         : 8px;
-  height        : 8px;
-  border-radius : 50%;
-  background    : #ccc;
-  display       : inline-block;
-}
-.conn-dot.online  { background: var(--accent); }
-.conn-dot.offline { background: var(--danger); }
-
-.conn-label {
-  font-size : 11px;
-  color     : var(--text-tertiary);
-}
-
-/* =============================================================================
-   4b. BOTTOM NAV BAR (mobile) + TOP NAV BAR (desktop)
+   4. NAVIGATION — top bar (desktop) + bottom bar (mobile)
    ============================================================================= */
 
-/* Top nav — visible on desktop, hidden on mobile */
+/* ── Top nav ── */
 .app-nav {
   display         : flex;
   align-items     : center;
@@ -202,12 +157,14 @@ input, button, select, textarea {
   gap         : 4px;
 }
 
+/* Auth controls slot — populated by App._renderAuthBar() */
 #auth-controls {
   display     : flex;
   align-items : center;
   gap         : 8px;
 }
-.app-nav .nav-link {
+
+.nav-link {
   display         : inline-flex;
   align-items     : center;
   gap             : 5px;
@@ -217,27 +174,32 @@ input, button, select, textarea {
   font-weight     : 500;
   color           : var(--text-secondary);
   text-decoration : none;
-  border          : none;
   background      : transparent;
+  border          : 0.5px solid transparent;
   cursor          : pointer;
   transition      : background 0.12s, color 0.12s;
   white-space     : nowrap;
 }
-.app-nav .nav-link:hover  { background: var(--bg-tertiary); color: var(--text-primary); }
-.app-nav .nav-link.active { background: var(--bg-primary); color: var(--accent);
-                             border: 0.5px solid var(--border-light); }
+.nav-link:hover  { background: var(--bg-tertiary); color: var(--text-primary); }
+.nav-link.active {
+  background   : var(--bg-primary);
+  color        : var(--accent);
+  border-color : var(--border-light);
+}
 
-/* Bottom nav bar — mobile only */
+/* ── Bottom nav (mobile only — shown via @media) ── */
 .bottom-nav {
-  display  : none;
-  position : fixed;
-  bottom   : 0; left : 0; right : 0;
-  height   : 58px;
-  background    : var(--bg-primary);
-  border-top    : 0.5px solid var(--border-light);
-  z-index       : 90;
-  align-items   : stretch;
-  box-shadow    : 0 -2px 12px rgba(0,0,0,0.06);
+  display      : none;    /* shown only at ≤ 600px */
+  position     : fixed;
+  bottom       : 0;
+  left         : 0;
+  right        : 0;
+  height       : 58px;
+  background   : var(--bg-primary);
+  border-top   : 0.5px solid var(--border-light);
+  z-index      : 90;
+  align-items  : stretch;
+  box-shadow   : 0 -2px 12px rgba(0, 0, 0, 0.06);
 }
 
 .bottom-nav-item {
@@ -251,108 +213,63 @@ input, button, select, textarea {
   font-weight     : 500;
   color           : var(--text-tertiary);
   text-decoration : none;
-  border          : none;
   background      : transparent;
+  border          : none;
   cursor          : pointer;
   padding         : 8px 4px 10px;
   transition      : color 0.12s;
-  -webkit-tap-highlight-color: transparent;
+  -webkit-tap-highlight-color : transparent;
 }
 .bottom-nav-item .nav-icon { font-size: 20px; line-height: 1; }
 .bottom-nav-item:hover,
-.bottom-nav-item.active  { color: var(--accent); }
+.bottom-nav-item.active { color: var(--accent); }
 
 /* =============================================================================
-   RESPONSIVE — mobile breakpoints
+   5. APP HEADER
    ============================================================================= */
-
-/* ≤ 600px: switch to bottom nav, tighten layout */
-@media (max-width: 600px) {
-  .page-wrapper {
-    padding : 1rem 0.75rem 80px; /* bottom padding clears the bottom nav */
-  }
-
-  /* Hide top nav on mobile — bottom nav takes over */
-  .app-nav          { display: none; }
-  .bottom-nav       { display: flex; }
-
-  /* App header: stack vertically */
-  .app-header {
-    flex-direction : column;
-    align-items    : flex-start;
-    gap            : 8px;
-    margin-bottom  : 1rem;
-  }
-  .app-header-right {
-    width     : 100%;
-    flex-wrap : wrap;
-    gap       : 6px;
-  }
-
-  /* Auth bar: stack left nav links and auth controls */
-  #auth-bar {
-    flex-direction : column !important;
-    align-items    : flex-start !important;
-    gap            : 8px !important;
-  }
-  #auth-controls { flex-wrap: wrap; }
-
-  /* Schedule header: stack */
-  .schedule-header {
-    flex-direction : column;
-    gap            : 0.75rem;
-  }
-  .schedule-header .btn-row { flex-wrap: wrap; }
-
-  /* Stats row: 2 cols instead of 3 */
-  .stats-row { grid-template-columns: repeat(2, 1fr); }
-
-  /* Format grid: 1 column */
-  .format-grid { grid-template-columns: 1fr 1fr; }
-
-  /* Team inputs: single column */
-  .team-inputs-grid { grid-template-columns: 1fr; }
-
-  /* Tournament item: wrap actions below name */
-  .tournament-item {
-    flex-direction : column;
-    align-items    : flex-start;
-    gap            : 8px;
-  }
-  .tournament-item-actions { width: 100%; justify-content: flex-end; }
-
-  /* Match cards: tighten padding */
-  .match-card { padding: 0.55rem 0.65rem; gap: 6px; }
-  .team-a, .team-b { font-size: 12px; }
-
-  /* Modal: full-width on small screens */
-  .modal { max-width: 100%; margin: auto 0 0; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
-  .modal-overlay { align-items: flex-end; padding: 0; }
+.app-header {
+  display         : flex;
+  align-items     : center;
+  justify-content : space-between;
+  margin-bottom   : 2rem;
+  padding-bottom  : 1rem;
+  border-bottom   : 0.5px solid var(--border-light);
 }
 
-/* 601–768px: tablet — keep top nav, tighten a bit */
-@media (min-width: 601px) and (max-width: 768px) {
-  .page-wrapper { padding: 1.25rem 1rem 3rem; }
+.app-header h1    { font-size: 18px; font-weight: 500; }
+.app-header p     { font-size: 12px; color: var(--text-tertiary); margin-top: 2px; }
 
-  .schedule-header { flex-wrap: wrap; }
-  .schedule-header .btn-row { flex-wrap: wrap; }
+.app-header-right {
+  display     : flex;
+  align-items : center;
+  gap         : 8px;
+}
 
-  .stats-row { grid-template-columns: repeat(3, 1fr); }
-  .team-inputs-grid { grid-template-columns: 1fr 1fr; }
+/* Connection indicator */
+.conn-dot {
+  width         : 8px;
+  height        : 8px;
+  border-radius : 50%;
+  background    : #ccc;
+  display       : inline-block;
+  flex-shrink   : 0;
+}
+.conn-dot.online  { background: var(--accent); }
+.conn-dot.offline { background: var(--danger); }
 
-  .tournament-item-actions { flex-wrap: wrap; }
+.conn-label { font-size: 11px; color: var(--text-tertiary); }
+
+/* =============================================================================
+   6. SCREEN VISIBILITY
+   ============================================================================= */
+.screen        { display: none; }
+.screen.active {
+  display   : block;
+  animation : fade-in 0.18s ease;
 }
 
 /* =============================================================================
-   5. SCREEN VISIBILITY
-   Only .screen.active is shown. All others are hidden.
-   ============================================================================= */
-.screen         { display: none; }
-.screen.active  { display: block; }
-
-/* =============================================================================
-   6. SECTION LABELS
-   Small uppercase labels used above cards and sections.
+   7. SECTION LABELS
    ============================================================================= */
 .section-label {
   font-size      : 11px;
@@ -364,7 +281,7 @@ input, button, select, textarea {
 }
 
 /* =============================================================================
-   7. CARDS
+   8. CARDS
    ============================================================================= */
 .card {
   background    : var(--bg-primary);
@@ -375,7 +292,7 @@ input, button, select, textarea {
 }
 
 /* =============================================================================
-   8. BUTTONS
+   9. BUTTONS
    ============================================================================= */
 .btn {
   display         : inline-flex;
@@ -398,26 +315,25 @@ input, button, select, textarea {
 .btn:active   { transform: scale(0.98); }
 .btn:disabled { opacity: 0.45; cursor: not-allowed; pointer-events: none; }
 
-.btn.primary { background: var(--accent);  border-color: var(--accent);  color: #fff; }
+.btn.primary       { background: var(--accent);  border-color: var(--accent);  color: #fff; }
 .btn.primary:hover { background: var(--accent-dark); }
 
-.btn.danger  { background: var(--danger);  border-color: var(--danger);  color: #fff; }
-.btn.danger:hover { background: #b83d3d; }
+.btn.danger        { background: var(--danger);  border-color: var(--danger);  color: #fff; }
+.btn.danger:hover  { background: #b83d3d; }
 
-.btn.ghost   { border-color: var(--border-light); color: var(--text-secondary); }
+.btn.ghost  { border-color: var(--border-light); color: var(--text-secondary); }
 
-/* Small variant */
 .btn.sm { height: 30px; padding: 0 12px; font-size: 12px; }
 
 .btn-row {
-  display   : flex;
-  gap       : 8px;
-  flex-wrap : wrap;
-  align-items: center;
+  display     : flex;
+  gap         : 8px;
+  flex-wrap   : wrap;
+  align-items : center;
 }
 
 /* =============================================================================
-   9. FORMAT PICKER
+   10. FORMAT PICKER
    ============================================================================= */
 .format-grid {
   display               : grid;
@@ -435,11 +351,12 @@ input, button, select, textarea {
   transition    : border-color 0.15s;
   text-align    : center;
 }
-.format-card:hover    { border-color: var(--border-mid); }
-.format-card.selected { border: 1.5px solid var(--accent); }
-.format-card .fmt-icon { font-size: 20px; margin-bottom: 6px; }
-.format-card .fmt-name { font-size: 13px; font-weight: 500; color: var(--text-primary); }
-.format-card .fmt-desc { font-size: 11px; color: var(--text-tertiary); margin-top: 3px; line-height: 1.4; }
+.format-card:hover            { border-color: var(--border-mid); }
+.format-card.selected         { border: 1.5px solid var(--accent); }
+.format-card.disabled         { opacity: 0.4; cursor: not-allowed; pointer-events: none; }
+.format-card .fmt-icon        { font-size: 20px; margin-bottom: 6px; }
+.format-card .fmt-name        { font-size: 13px; font-weight: 500; color: var(--text-primary); }
+.format-card .fmt-desc        { font-size: 11px; color: var(--text-tertiary); margin-top: 3px; line-height: 1.4; }
 
 .format-suggestion {
   font-size     : 12px;
@@ -451,14 +368,8 @@ input, button, select, textarea {
   display       : inline-block;
 }
 
-.format-card.disabled {
-  opacity: 0.4;
-  cursor: not-allowed;
-  pointer-events: none;
-}
-
 /* =============================================================================
-   10. TEAM COUNT INPUT
+   11. TEAM COUNT INPUT
    ============================================================================= */
 .team-count-row {
   display       : flex;
@@ -466,13 +377,7 @@ input, button, select, textarea {
   gap           : 12px;
   margin-bottom : 0.6rem;
 }
-
-.team-count-row label {
-  font-size   : 13px;
-  color       : var(--text-secondary);
-  white-space : nowrap;
-}
-
+.team-count-row label { font-size: 13px; color: var(--text-secondary); white-space: nowrap; }
 .team-count-row input[type="number"] {
   width         : 80px;
   height        : 38px;
@@ -486,17 +391,13 @@ input, button, select, textarea {
   outline       : none;
   transition    : border-color 0.15s;
 }
-.team-count-row input[type="number"]:focus { border-color: var(--accent); }
+.team-count-row input[type="number"]:focus       { border-color: var(--accent); }
 .team-count-row input[type="number"].input-error { border-color: var(--danger); }
 
-.team-count-hint {
-  font-size     : 11px;
-  color         : var(--text-tertiary);
-  margin-bottom : 1.25rem;
-}
+.team-count-hint { font-size: 11px; color: var(--text-tertiary); margin-bottom: 1.25rem; }
 
 /* =============================================================================
-   11. TEAM NAME INPUTS
+   12. TEAM NAME INPUTS
    ============================================================================= */
 .team-inputs-grid {
   display               : grid;
@@ -516,12 +417,7 @@ input, button, select, textarea {
   height        : 38px;
 }
 
-.team-num {
-  font-size   : 11px;
-  font-weight : 500;
-  color       : var(--text-tertiary);
-  min-width   : 20px;
-}
+.team-num { font-size: 11px; font-weight: 500; color: var(--text-tertiary); min-width: 20px; }
 
 .team-input-wrap input {
   border     : none;
@@ -533,7 +429,7 @@ input, button, select, textarea {
   height     : 100%;
 }
 
-/* Tournament name input (full width) */
+/* Tournament name input */
 .tournament-name-input {
   width         : 100%;
   height        : 38px;
@@ -550,7 +446,7 @@ input, button, select, textarea {
 .tournament-name-input:focus { border-color: var(--accent); }
 
 /* =============================================================================
-   12. BANNERS (ERROR / SUCCESS)
+   13. BANNERS (ERROR / SUCCESS / WARNING)
    ============================================================================= */
 .error-banner,
 .success-banner,
@@ -567,26 +463,14 @@ input, button, select, textarea {
 .success-banner.visible,
 .warning-banner.visible { display: flex; }
 
-.error-banner {
-  background : var(--bg-error);
-  border     : 0.5px solid #f5c0c0;
-  color      : var(--text-error);
-}
-.success-banner {
-  background : var(--bg-success);
-  border     : 0.5px solid #a0dfc4;
-  color      : var(--text-success);
-}
-.warning-banner {
-  background : var(--bg-warning);
-  border     : 0.5px solid #f0d080;
-  color      : var(--text-warning);
-}
+.error-banner   { background: var(--bg-error);   border: 0.5px solid #f5c0c0; color: var(--text-error);   }
+.success-banner { background: var(--bg-success);  border: 0.5px solid #a0dfc4; color: var(--text-success); }
+.warning-banner { background: var(--bg-warning);  border: 0.5px solid #f0d080; color: var(--text-warning); }
 
 .banner-icon { font-size: 14px; flex-shrink: 0; }
 
 /* =============================================================================
-   13. HOME SCREEN — TOURNAMENT LIST
+   14. HOME SCREEN — TOURNAMENT LIST
    ============================================================================= */
 .tournament-list { margin-bottom: 1rem; }
 
@@ -603,15 +487,8 @@ input, button, select, textarea {
 }
 .tournament-item:hover { border-color: var(--border-mid); }
 
-.tournament-item-info h3 {
-  font-size   : 14px;
-  font-weight : 500;
-}
-.tournament-item-info p {
-  font-size  : 11px;
-  color      : var(--text-tertiary);
-  margin-top : 2px;
-}
+.tournament-item-info h3 { font-size: 14px; font-weight: 500; }
+.tournament-item-info p  { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
 .tournament-item-actions {
   display     : flex;
@@ -627,14 +504,10 @@ input, button, select, textarea {
   font-size   : 13px;
   line-height : 1.8;
 }
-.empty-state .empty-icon {
-  font-size     : 32px;
-  margin-bottom : 0.75rem;
-  display       : block;
-}
+.empty-state .empty-icon { font-size: 32px; margin-bottom: 0.75rem; display: block; }
 
 /* =============================================================================
-   14. FIXTURES SCREEN — STATS, TABS, ROUNDS
+   15. FIXTURES SCREEN — STATS, TABS, ROUNDS
    ============================================================================= */
 .schedule-header {
   display         : flex;
@@ -652,14 +525,9 @@ input, button, select, textarea {
   gap                   : 8px;
   margin-bottom         : 1.25rem;
 }
-.stat-box {
-  background    : var(--bg-secondary);
-  border-radius : var(--radius-md);
-  padding       : 0.75rem;
-  text-align    : center;
-}
-.stat-val { font-size: 22px; font-weight: 500; }
-.stat-lbl { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+.stat-box  { background: var(--bg-secondary); border-radius: var(--radius-md); padding: 0.75rem; text-align: center; }
+.stat-val  { font-size: 22px; font-weight: 500; }
+.stat-lbl  { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
 /* Tabs */
 .tab-row {
@@ -669,6 +537,7 @@ input, button, select, textarea {
   background    : var(--bg-secondary);
   border-radius : var(--radius-md);
   padding       : 3px;
+  flex-wrap     : wrap;
 }
 .tab {
   flex          : 1;
@@ -682,6 +551,7 @@ input, button, select, textarea {
   border        : none;
   background    : transparent;
   transition    : background 0.12s, color 0.12s;
+  white-space   : nowrap;
 }
 .tab.active {
   background : var(--bg-primary);
@@ -713,7 +583,7 @@ input, button, select, textarea {
 }
 
 /* =============================================================================
-   15. MATCH CARDS
+   16. MATCH CARDS
    ============================================================================= */
 .match-card {
   background    : var(--bg-primary);
@@ -726,52 +596,18 @@ input, button, select, textarea {
   margin-bottom : 6px;
   transition    : border-color 0.15s, background 0.12s;
 }
-.match-card.clickable { cursor: pointer; }
-.match-card.clickable:hover { border-color: var(--accent); }
-.match-card.completed { background: var(--bg-secondary); }
+.match-card.clickable         { cursor: pointer; }
+.match-card.clickable:hover   { border-color: var(--accent); }
+.match-card.completed         { background: var(--bg-secondary); }
 
-.match-num {
-  font-size   : 11px;
-  color       : var(--text-tertiary);
-  min-width   : 22px;
-  font-weight : 500;
-}
+.match-num  { font-size: 11px; color: var(--text-tertiary); min-width: 22px; font-weight: 500; }
+.match-score { font-size: 12px; font-weight: 500; color: var(--accent); white-space: nowrap; min-width: 50px; text-align: center; }
+.match-action { font-size: 11px; color: var(--text-tertiary); min-width: 70px; text-align: right; }
 
-.team-a {
-  flex        : 1;
-  font-size   : 13px;
-  font-weight : 500;
-  text-align  : right;
-}
+.team-a { flex: 1; font-size: 13px; font-weight: 500; text-align: right; }
+.team-b { flex: 1; font-size: 13px; font-weight: 500; }
 
-.team-b {
-  flex        : 1;
-  font-size   : 13px;
-  font-weight : 500;
-}
-
-.vs {
-  font-size   : 11px;
-  color       : var(--text-tertiary);
-  font-weight : 500;
-  padding     : 0 6px;
-}
-
-.match-score {
-  font-size   : 12px;
-  font-weight : 500;
-  color       : var(--accent);
-  white-space : nowrap;
-  min-width   : 50px;
-  text-align  : center;
-}
-
-.match-action {
-  font-size : 11px;
-  color     : var(--text-tertiary);
-  min-width : 70px;
-  text-align: right;
-}
+.vs { font-size: 11px; color: var(--text-tertiary); font-weight: 500; padding: 0 6px; }
 
 .tbd         { color: var(--text-tertiary) !important; font-style: italic; }
 .winner-bold { font-weight: 700; color: var(--accent) !important; }
@@ -790,13 +626,13 @@ input, button, select, textarea {
 .badge-teal      { background: #E1F5EE; color: #0F6E56; }
 
 /* =============================================================================
-   16. SCORE ENTRY MODAL
+   17. SCORE ENTRY MODAL
    ============================================================================= */
 .modal-overlay {
   display         : none;
   position        : fixed;
   inset           : 0;
-  background      : rgba(0,0,0,0.45);
+  background      : rgba(0, 0, 0, 0.45);
   z-index         : 100;
   justify-content : center;
   align-items     : center;
@@ -812,37 +648,12 @@ input, button, select, textarea {
   padding       : 1.5rem;
   width         : 100%;
   max-width     : 380px;
-  box-shadow    : 0 8px 40px rgba(0,0,0,0.2);
+  box-shadow    : 0 8px 40px rgba(0, 0, 0, 0.2);
   animation     : modal-in 0.18s ease;
 }
+.modal h2 { font-size: 15px; font-weight: 500; margin-bottom: 1.25rem; }
 
-@keyframes modal-in {
-  from { opacity: 0; transform: scale(0.96) translateY(8px); }
-  to   { opacity: 1; transform: scale(1) translateY(0); }
-}
-
-.modal h2 {
-  font-size     : 15px;
-  font-weight   : 500;
-  margin-bottom : 1.25rem;
-}
-
-.modal-teams {
-  display               : grid;
-  grid-template-columns : 1fr auto 1fr;
-  align-items           : center;
-  gap                   : 10px;
-  margin-bottom         : 1.25rem;
-}
-
-.modal-team-name {
-  font-size   : 13px;
-  font-weight : 500;
-  text-align  : center;
-}
-
-.modal-vs { font-size: 11px; color: var(--text-tertiary); }
-
+.modal-teams,
 .score-inputs {
   display               : grid;
   grid-template-columns : 1fr auto 1fr;
@@ -850,6 +661,9 @@ input, button, select, textarea {
   gap                   : 10px;
   margin-bottom         : 1.25rem;
 }
+
+.modal-team-name { font-size: 13px; font-weight: 500; text-align: center; }
+.modal-vs        { font-size: 11px; color: var(--text-tertiary); }
 
 .score-input {
   width         : 100%;
@@ -866,11 +680,7 @@ input, button, select, textarea {
 }
 .score-input:focus { border-color: var(--accent); }
 
-.score-sep {
-  font-size  : 20px;
-  color      : var(--text-tertiary);
-  text-align : center;
-}
+.score-sep { font-size: 20px; color: var(--text-tertiary); text-align: center; }
 
 .modal-error {
   font-size     : 12px;
@@ -880,7 +690,6 @@ input, button, select, textarea {
 }
 .modal-error.visible { display: block; }
 
-/* Edit result note */
 .modal-edit-note {
   font-size     : 11px;
   color         : var(--text-warning);
@@ -893,26 +702,12 @@ input, button, select, textarea {
 .modal-edit-note.visible { display: block; }
 
 /* =============================================================================
-   17. BRACKET PAGE (bracket.html)
+   18. BRACKET PAGE (bracket.html)
    ============================================================================= */
-
-/* Bracket canvas — horizontally scrollable */
-.bracket-page-header {
-  display         : flex;
-  align-items     : center;
-  justify-content : space-between;
-  margin-bottom   : 1.5rem;
-  flex-wrap       : wrap;
-  gap             : 0.75rem;
-}
-
-.bracket-page-title { font-size: 20px; font-weight: 500; }
-.bracket-page-meta  { font-size: 12px; color: var(--text-tertiary); margin-top: 3px; }
-
 .bracket-canvas-wrap {
-  overflow-x    : auto;
-  overflow-y    : visible;
-  padding-bottom: 1.5rem;
+  overflow-x     : auto;
+  overflow-y     : visible;
+  padding-bottom : 1.5rem;
 }
 
 .bracket-canvas {
@@ -923,7 +718,7 @@ input, button, select, textarea {
   padding     : 1rem 0.5rem;
 }
 
-/* Each round column */
+/* Round column */
 .bc-round {
   display        : flex;
   flex-direction : column;
@@ -931,8 +726,6 @@ input, button, select, textarea {
   padding        : 0 16px;
   position       : relative;
 }
-
-/* Vertical connector line between rounds */
 .bc-round::after {
   content    : '';
   position   : absolute;
@@ -957,31 +750,25 @@ input, button, select, textarea {
 }
 
 .bc-matches {
-  display        : flex;
-  flex-direction : column;
-  gap            : 12px;
-  flex           : 1;
-  justify-content: space-around;
+  display         : flex;
+  flex-direction  : column;
+  gap             : 12px;
+  flex            : 1;
+  justify-content : space-around;
 }
 
-/* Individual bracket match card */
 .bc-match {
   background    : var(--bg-primary);
   border        : 1px solid var(--border-light);
   border-radius : var(--radius-md);
   overflow      : hidden;
   transition    : border-color 0.15s, box-shadow 0.15s;
-  cursor        : default;
 }
-.bc-match.clickable { cursor: pointer; }
-.bc-match.clickable:hover {
-  border-color : var(--accent);
-  box-shadow   : 0 2px 12px rgba(29,158,117,0.15);
-}
-.bc-match.done { border-color: var(--accent); }
-.bc-match.tbd-match { opacity: 0.5; }
+.bc-match.clickable       { cursor: pointer; }
+.bc-match.clickable:hover { border-color: var(--accent); box-shadow: 0 2px 12px rgba(29,158,117,0.15); }
+.bc-match.done            { border-color: var(--accent); }
+.bc-match.tbd-match       { opacity: 0.5; }
 
-/* Each team row within a bracket match */
 .bc-team {
   display         : flex;
   align-items     : center;
@@ -1000,18 +787,13 @@ input, button, select, textarea {
   max-width     : 120px;
 }
 
-.bc-team.tbd .bc-team-name  { color: var(--text-tertiary); font-style: italic; }
-.bc-team.bye .bc-team-name  { color: var(--text-tertiary); font-style: italic; }
-.bc-team.winner { background: var(--bg-success); }
+.bc-team.tbd .bc-team-name,
+.bc-team.bye .bc-team-name { color: var(--text-tertiary); font-style: italic; }
+
+.bc-team.winner              { background: var(--bg-success); }
 .bc-team.winner .bc-team-name { font-weight: 600; color: var(--accent); }
 
-.bc-score {
-  font-size   : 12px;
-  font-weight : 600;
-  color       : var(--text-tertiary);
-  margin-left : 8px;
-  flex-shrink : 0;
-}
+.bc-score { font-size: 12px; font-weight: 600; color: var(--text-tertiary); margin-left: 8px; flex-shrink: 0; }
 .bc-team.winner .bc-score { color: var(--accent); }
 
 /* Champion display */
@@ -1023,21 +805,10 @@ input, button, select, textarea {
   color         : #fff;
   margin-top    : 1.5rem;
 }
-.champion-box .trophy { font-size: 36px; margin-bottom: 0.5rem; }
-.champion-box h2 { font-size: 13px; font-weight: 400; opacity: 0.8; margin-bottom: 4px; }
+.champion-box .trophy        { font-size: 36px; margin-bottom: 0.5rem; }
+.champion-box h2             { font-size: 13px; font-weight: 400; opacity: 0.8; margin-bottom: 4px; }
 .champion-box .champion-name { font-size: 22px; font-weight: 600; }
 
-/* Group stage bracket labels */
-.group-bracket-label {
-  font-size      : 12px;
-  font-weight    : 500;
-  color          : var(--text-secondary);
-  margin-bottom  : 8px;
-  padding-bottom : 6px;
-  border-bottom  : 0.5px solid var(--border-light);
-}
-
-/* No bracket state */
 .no-bracket {
   text-align  : center;
   padding     : 3rem 1rem;
@@ -1047,7 +818,379 @@ input, button, select, textarea {
 }
 
 /* =============================================================================
-   18. DEBUG LOG PANEL
+   19. STATS PAGE (stats.html)
+   ============================================================================= */
+
+/* .stats-page sits inside .app — no extra max-width or side padding needed */
+.stats-page { padding-bottom: 1rem; }
+
+.stats-header {
+  display         : flex;
+  align-items     : center;
+  justify-content : space-between;
+  padding         : 1rem 0 0.75rem;
+  flex-wrap       : wrap;
+  gap             : 8px;
+}
+.stats-header h1 { font-size: 18px; font-weight: 700; color: var(--text-primary); margin: 0; }
+.stats-header p  { font-size: 12px; color: var(--text-tertiary); margin: 2px 0 0; }
+
+/* Search / filter bar */
+.search-bar {
+  display       : flex;
+  gap           : 8px;
+  margin-bottom : 1rem;
+  flex-wrap     : wrap;
+}
+.search-bar input,
+.search-bar select {
+  flex          : 1;
+  min-width     : 140px;
+  padding       : 8px 12px;
+  font-size     : 13px;
+  border        : 1px solid var(--border-light);
+  border-radius : var(--radius-md);
+  background    : var(--bg-secondary);
+  color         : var(--text-primary);
+  outline       : none;
+  transition    : border-color 0.15s;
+}
+.search-bar input:focus,
+.search-bar select:focus { border-color: var(--accent); }
+
+/* Team card */
+.team-card {
+  background    : var(--bg-primary);
+  border        : 0.5px solid var(--border-light);
+  border-radius : var(--radius-md);
+  padding       : 0.85rem 1rem;
+  margin-bottom : 8px;
+  cursor        : pointer;
+  display       : flex;
+  align-items   : center;
+  justify-content: space-between;
+  gap           : 12px;
+  transition    : border-color 0.15s, box-shadow 0.15s;
+}
+.team-card:hover { border-color: var(--accent); box-shadow: 0 2px 10px rgba(29,158,117,0.12); }
+
+.team-card-name  { font-size: 14px; font-weight: 600; color: var(--text-primary); }
+.team-card-meta  { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+
+.team-card-stats { display: flex; gap: 16px; flex-shrink: 0; }
+.team-card-stat  { text-align: center; }
+.team-card-stat-val { font-size: 16px; font-weight: 700; color: var(--accent); }
+.team-card-stat-lbl {
+  font-size      : 10px;
+  color          : var(--text-tertiary);
+  text-transform : uppercase;
+  letter-spacing : 0.05em;
+}
+
+/* Team detail (inside modal) */
+.team-detail {
+  background    : var(--bg-primary);
+  border        : 0.5px solid var(--border-light);
+  border-radius : var(--radius-lg);
+  padding       : 1.25rem;
+  margin-bottom : 1rem;
+}
+.team-detail-header {
+  display         : flex;
+  align-items     : flex-start;
+  justify-content : space-between;
+  margin-bottom   : 1rem;
+  flex-wrap       : wrap;
+  gap             : 8px;
+}
+.team-detail-name     { font-size: 20px; font-weight: 700; color: var(--text-primary); }
+.team-detail-category { font-size: 12px; color: var(--text-tertiary); margin-top: 3px; }
+
+.team-detail-stats {
+  display               : grid;
+  grid-template-columns : repeat(4, 1fr);
+  gap                   : 8px;
+  margin-bottom         : 1rem;
+}
+.detail-stat-box { background: var(--bg-secondary); border-radius: var(--radius-md); padding: 10px 8px; text-align: center; }
+.detail-stat-val { font-size: 22px; font-weight: 700; color: var(--accent); }
+.detail-stat-lbl { font-size: 10px; color: var(--text-tertiary); text-transform: uppercase; letter-spacing: 0.05em; margin-top: 2px; }
+
+/* Tournament history table */
+.history-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.history-table th {
+  padding        : 6px 8px;
+  font-size      : 10px;
+  font-weight    : 600;
+  color          : var(--text-tertiary);
+  text-transform : uppercase;
+  letter-spacing : 0.05em;
+  text-align     : left;
+  background     : var(--bg-secondary);
+}
+.history-table td     { padding: 8px; border-top: 0.5px solid var(--border-light); color: var(--text-primary); }
+.history-table tr:hover td { background: var(--bg-secondary); }
+
+/* Head-to-head */
+.h2h-selector {
+  display               : grid;
+  grid-template-columns : 1fr auto 1fr;
+  gap                   : 12px;
+  align-items           : center;
+  margin-bottom         : 1rem;
+}
+.h2h-selector select {
+  width           : 100%;
+  padding         : 8px 12px;
+  font-size       : 13px;
+  border          : 1px solid var(--border-light);
+  border-radius   : var(--radius-md);
+  background      : var(--bg-secondary);
+  color           : var(--text-primary);
+  outline         : none;
+  cursor          : pointer;
+  transition      : border-color 0.15s;
+  appearance      : none;
+  -webkit-appearance : none;
+  background-image    : url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%239a9993' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+  background-repeat   : no-repeat;
+  background-position : right 12px center;
+  padding-right       : 32px;
+}
+.h2h-selector select:focus { border-color: var(--accent); }
+
+.h2h-selector optgroup {
+  font-size   : 11px;
+  font-weight : 600;
+  color       : var(--text-tertiary);
+}
+
+.h2h-selector option {
+  font-size  : 13px;
+  color      : var(--text-primary);
+  background : var(--bg-primary);
+}
+.h2h-vs { font-size: 14px; font-weight: 700; color: var(--text-tertiary); text-align: center; }
+
+.h2h-summary {
+  display               : grid;
+  grid-template-columns : 1fr auto 1fr;
+  gap                   : 8px;
+  background            : var(--bg-secondary);
+  border-radius         : var(--radius-md);
+  padding               : 1rem;
+  margin-bottom         : 1rem;
+  text-align            : center;
+}
+.h2h-wins    { font-size: 36px; font-weight: 800; color: var(--accent); }
+.h2h-label   { font-size: 11px; color: var(--text-tertiary); margin-top: 4px; }
+.h2h-divider { display: flex; align-items: center; justify-content: center; font-size: 20px; color: var(--text-tertiary); font-weight: 300; }
+
+/* Rankings table */
+.rankings-table {
+  width           : 100%;
+  border-collapse : collapse;
+  font-size       : 12px;
+  background      : var(--bg-primary);
+  border-radius   : var(--radius-md);
+  overflow        : hidden;
+  border          : 0.5px solid var(--border-light);
+}
+.rankings-table th {
+  padding        : 8px 10px;
+  font-size      : 10px;
+  font-weight    : 600;
+  color          : var(--text-tertiary);
+  text-transform : uppercase;
+  letter-spacing : 0.05em;
+  background     : var(--bg-secondary);
+  cursor         : pointer;
+  user-select    : none;
+  white-space    : nowrap;
+}
+.rankings-table th:hover  { color: var(--accent); }
+.rankings-table th.sorted { color: var(--accent); }
+.rankings-table td        { padding: 8px 10px; border-top: 0.5px solid var(--border-light); color: var(--text-primary); }
+.rankings-table tr:hover td { background: var(--bg-secondary); }
+
+.rank-num { font-size: 11px; font-weight: 700; color: var(--text-tertiary); width: 28px; }
+.rank-1   { color: #f59e0b; }
+.rank-2   { color: #94a3b8; }
+.rank-3   { color: #b45309; }
+
+/* Win-rate bar */
+.win-bar-wrap {
+  background    : var(--bg-secondary);
+  border-radius : 99px;
+  height        : 4px;
+  width         : 60px;
+  overflow      : hidden;
+  display       : inline-block;
+  vertical-align: middle;
+  margin-left   : 6px;
+}
+.win-bar-fill { height: 100%; background: var(--accent); border-radius: 99px; }
+
+/* Placement badge */
+.placement-badge {
+  display         : inline-flex;
+  align-items     : center;
+  justify-content : center;
+  width           : 22px;
+  height          : 22px;
+  border-radius   : 50%;
+  font-size       : 11px;
+  font-weight     : 700;
+}
+.placement-1     { background: #fef3c7; color: #f59e0b; }
+.placement-2     { background: #f1f5f9; color: #94a3b8; }
+.placement-3     { background: #fef3c7; color: #b45309; }
+.placement-other { background: var(--bg-secondary); color: var(--text-tertiary); }
+
+/* Empty / loading states */
+.stats-empty      { text-align: center; padding: 3rem 1rem; color: var(--text-tertiary); font-size: 13px; }
+.stats-empty-icon { font-size: 32px; display: block; margin-bottom: 0.5rem; }
+
+/* Inline spinner (stats page) */
+.spinner-inline {
+  display        : inline-block;
+  width          : 14px;
+  height         : 14px;
+  border         : 2px solid var(--border-light);
+  border-top-color: var(--accent);
+  border-radius  : 50%;
+  animation      : spin 0.7s linear infinite;
+  vertical-align : middle;
+  margin-right   : 6px;
+}
+
+/* =============================================================================
+   20. LOGIN PAGE (login.html)
+   ============================================================================= */
+.login-wrap {
+  min-height      : 100vh;
+  display         : flex;
+  align-items     : center;
+  justify-content : center;
+  padding         : 1rem;
+  background      : var(--bg-secondary);
+}
+
+.login-card {
+  background    : var(--bg-primary);
+  border        : 0.5px solid var(--border-light);
+  border-radius : var(--radius-lg);
+  padding       : 2rem;
+  width         : 100%;
+  max-width     : 400px;
+}
+
+.login-logo  { text-align: center; font-size: 32px; margin-bottom: 0.5rem; }
+.login-title { text-align: center; font-size: 18px; font-weight: 600; color: var(--text-primary); margin-bottom: 0.25rem; }
+.login-sub   { text-align: center; font-size: 12px; color: var(--text-tertiary); margin-bottom: 1.5rem; }
+
+.auth-tabs {
+  display       : flex;
+  border-bottom : 1px solid var(--border-light);
+  margin-bottom : 1.5rem;
+}
+.auth-tab {
+  flex          : 1;
+  padding       : 8px;
+  font-size     : 13px;
+  font-weight   : 500;
+  text-align    : center;
+  cursor        : pointer;
+  color         : var(--text-tertiary);
+  border-bottom : 2px solid transparent;
+  margin-bottom : -1px;
+  transition    : color 0.15s, border-color 0.15s;
+}
+.auth-tab.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+.auth-panel        { display: none; }
+.auth-panel.active { display: block; }
+
+.login-field { margin-bottom: 1rem; }
+.login-field label {
+  display     : block;
+  font-size   : 12px;
+  font-weight : 500;
+  color       : var(--text-secondary);
+  margin-bottom: 5px;
+}
+.login-field input {
+  width         : 100%;
+  padding       : 10px 12px;
+  font-size     : 14px;
+  border        : 1px solid var(--border-light);
+  border-radius : var(--radius-md);
+  background    : var(--bg-secondary);
+  color         : var(--text-primary);
+  transition    : border-color 0.15s;
+  outline       : none;
+}
+.login-field input:focus { border-color: var(--accent); }
+
+.login-btn {
+  display         : flex;
+  align-items     : center;
+  justify-content : center;
+  gap             : 10px;
+  width           : 100%;
+  padding         : 10px 1rem;
+  font-size       : 14px;
+  font-weight     : 600;
+  color           : #fff;
+  background      : var(--accent);
+  border          : none;
+  border-radius   : var(--radius-md);
+  cursor          : pointer;
+  margin-top      : 0.5rem;
+  transition      : opacity 0.15s;
+}
+.login-btn:hover    { opacity: 0.88; }
+.login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+.auth-msg {
+  display       : none;
+  font-size     : 12px;
+  padding       : 8px 12px;
+  border-radius : var(--radius-md);
+  margin-top    : 0.75rem;
+}
+.auth-msg.error {
+  display    : block;
+  background : #fef2f2;
+  border     : 0.5px solid var(--danger);
+  color      : var(--danger);
+}
+.auth-msg.success {
+  display    : block;
+  background : var(--bg-success);
+  border     : 0.5px solid var(--accent);
+  color      : var(--accent);
+}
+
+.login-guest   { text-align: center; margin-top: 1.25rem; font-size: 12px; color: var(--text-tertiary); }
+.login-guest a { color: var(--accent); text-decoration: none; font-weight: 500; }
+
+.password-wrap { position: relative; }
+.password-toggle {
+  position  : absolute;
+  right     : 10px;
+  top       : 50%;
+  transform : translateY(-50%);
+  font-size : 14px;
+  cursor    : pointer;
+  color     : var(--text-tertiary);
+  background: none;
+  border    : none;
+  padding   : 2px;
+}
+
+/* =============================================================================
+   21. DEBUG LOG PANEL
    ============================================================================= */
 .log-toggle {
   font-size   : 11px;
@@ -1077,15 +1220,15 @@ input, button, select, textarea {
 }
 .log-panel.open { display: block; }
 
-.log-entry         { display: flex; gap: 10px; }
-.log-time          { color: var(--text-tertiary); flex-shrink: 0; }
-.log-level-INFO    { color: #1D9E75; flex-shrink: 0; min-width: 40px; }
-.log-level-WARN    { color: #d4860a; flex-shrink: 0; min-width: 40px; }
-.log-level-ERROR   { color: var(--danger); flex-shrink: 0; min-width: 40px; }
-.log-level-DEBUG   { color: #7a9ec2; flex-shrink: 0; min-width: 40px; }
-.log-msg           { color: var(--text-secondary); word-break: break-all; }
+.log-entry      { display: flex; gap: 10px; }
+.log-time       { color: var(--text-tertiary); flex-shrink: 0; }
+.log-level-INFO  { color: #1D9E75; flex-shrink: 0; min-width: 40px; }
+.log-level-WARN  { color: #d4860a; flex-shrink: 0; min-width: 40px; }
+.log-level-ERROR { color: var(--danger); flex-shrink: 0; min-width: 40px; }
+.log-level-DEBUG { color: #7a9ec2; flex-shrink: 0; min-width: 40px; }
+.log-msg         { color: var(--text-secondary); word-break: break-all; }
 
-.log-actions       { display: flex; gap: 8px; margin-bottom: 6px; }
+.log-actions { display: flex; gap: 8px; margin-bottom: 6px; }
 .log-btn {
   font-size     : 11px;
   color         : var(--text-tertiary);
@@ -1098,488 +1241,118 @@ input, button, select, textarea {
 .log-btn:hover { color: var(--text-primary); border-color: var(--border-mid); }
 
 /* =============================================================================
-   19. UTILITIES
-   ============================================================================= */
-
-/* Loading spinner */
-.spinner {
-  display       : inline-block;
-  width         : 14px;
-  height        : 14px;
-  border        : 2px solid rgba(255,255,255,0.35);
-  border-top    : 2px solid #fff;
-  border-radius : 50%;
-  flex-shrink   : 0;
-}
-
-/* Dark spinner variant (for non-primary buttons) */
-.spinner.dark {
-  border-color     : rgba(0,0,0,0.15);
-  border-top-color : var(--text-primary);
-}
-
-/* Divider */
-.divider {
-  height     : 0.5px;
-  background : var(--border-light);
-  margin     : 1rem 0;
-}
-
-/* Muted text */
-.text-muted { color: var(--text-tertiary); font-size: 12px; }
-
-/* =============================================================================
-   20. ANIMATIONS
+   22. UTILITIES & ANIMATIONS
    ============================================================================= */
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
-
-.spinner { animation: spin 0.7s linear infinite; }
 
 @keyframes fade-in {
   from { opacity: 0; transform: translateY(6px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 
-.screen.active { animation: fade-in 0.18s ease; }
-/***LOGIN PAGE***/
-.login-wrap {
-      min-height: 100vh;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      padding: 1rem;
-      background: var(--bg-secondary);
-    }
-    .login-card {
-      background: var(--bg-primary);
-      border: 0.5px solid var(--border-light);
-      border-radius: var(--radius-lg);
-      padding: 2rem;
-      width: 100%;
-      max-width: 400px;
-    }
-    .login-logo  { text-align:center;font-size:32px;margin-bottom:0.5rem; }
-    .login-title { text-align:center;font-size:18px;font-weight:600;color:var(--text-primary);margin-bottom:0.25rem; }
-    .login-sub   { text-align:center;font-size:12px;color:var(--text-tertiary);margin-bottom:1.5rem; }
+@keyframes modal-in {
+  from { opacity: 0; transform: scale(0.96) translateY(8px); }
+  to   { opacity: 1; transform: scale(1) translateY(0); }
+}
 
-    .auth-tabs {
-      display: flex;
-      border-bottom: 1px solid var(--border-light);
-      margin-bottom: 1.5rem;
-    }
-    .auth-tab {
-      flex: 1;
-      padding: 8px;
-      font-size: 13px;
-      font-weight: 500;
-      text-align: center;
-      cursor: pointer;
-      color: var(--text-tertiary);
-      border-bottom: 2px solid transparent;
-      margin-bottom: -1px;
-      transition: color 0.15s, border-color 0.15s;
-    }
-    .auth-tab.active {
-      color: var(--accent);
-      border-bottom-color: var(--accent);
-    }
-    .auth-panel { display: none; }
-    .auth-panel.active { display: block; }
+.spinner {
+  display       : inline-block;
+  width         : 14px;
+  height        : 14px;
+  border        : 2px solid rgba(255, 255, 255, 0.35);
+  border-top    : 2px solid #fff;
+  border-radius : 50%;
+  flex-shrink   : 0;
+  animation     : spin 0.7s linear infinite;
+}
+.spinner.dark { border-color: rgba(0,0,0,0.15); border-top-color: var(--text-primary); }
 
-    .login-field { margin-bottom: 1rem; }
-    .login-field label {
-      display: block;
-      font-size: 12px;
-      font-weight: 500;
-      color: var(--text-secondary);
-      margin-bottom: 5px;
-    }
-    .login-field input {
-      width: 100%;
-      padding: 10px 12px;
-      font-size: 14px;
-      border: 1px solid var(--border-light);
-      border-radius: var(--radius-md);
-      background: var(--bg-secondary);
-      color: var(--text-primary);
-      box-sizing: border-box;
-      transition: border-color 0.15s;
-    }
-    .login-field input:focus { outline:none;border-color:var(--accent); }
+.divider    { height: 0.5px; background: var(--border-light); margin: 1rem 0; }
+.text-muted { color: var(--text-tertiary); font-size: 12px; }
 
-    .login-btn {
-      width: 100%;
-      font-size: 14px;
-      font-weight: 600;
-      color: var(--accent);
-      border: none;
-      border-radius: var(--radius-md);
-      cursor: pointer;
-      margin-top: 0.5rem;
-      transition: opacity 0.15s;
-      display:flex;
-      align-items:center;
-      gap:10px; 
-      padding:8px 1rem; 
-      background:var(--bg-secondary); 
-      border-bottom:0.5px solid var(--border-light); 
-      justify-content:center;
-    }
-    .login-btn:hover    { opacity: 0.88; }
-    .login-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+/* =============================================================================
+   23. RESPONSIVE BREAKPOINTS
+   All overrides collected here — never scattered above.
+   ============================================================================= */
 
-    .auth-msg {
-      display: none;
-      font-size: 12px;
-      padding: 8px 12px;
-      border-radius: var(--radius-md);
-      margin-top: 0.75rem;
-    }
-    .auth-msg.error {
-      display: block;
-      background: var(--bg-danger, #fef2f2);
-      border: 0.5px solid var(--danger);
-      color: var(--danger);
-    }
-    .auth-msg.success {
-      display: block;
-      background: var(--bg-success);
-      border: 0.5px solid var(--accent);
-      color: var(--accent);
-    }
-    .login-guest {
-      text-align: center;
-      margin-top: 1.25rem;
-      font-size: 12px;
-      color: var(--text-tertiary);
-    }
-    .login-guest a { color:var(--accent);text-decoration:none;font-weight:500; }
+/* ── ≤ 600px : Mobile ────────────────────────────────────────────────────────
+   Bottom nav replaces top nav. Layout tightens, modals become bottom sheets.
+   ──────────────────────────────────────────────────────────────────────────── */
+@media (max-width: 600px) {
+  .page-wrapper { padding: 1rem 0.75rem 80px; } /* 80px clears the fixed bottom nav */
 
-    .password-wrap { position: relative; }
-    .password-toggle {
-      position: absolute;
-      right: 10px;
-      top: 50%;
-      transform: translateY(-50%);
-      font-size: 14px;
-      cursor: pointer;
-      color: var(--text-tertiary);
-      background: none;
-      border: none;
-      padding: 2px;
-    }
-    
-     /* =========================================================================
-     STATS PAGE — additional styles layered on top of styles.css
-     ========================================================================= */
+  .app-nav    { display: none; }
+  .bottom-nav { display: flex; }
 
-  .stats-page { max-width: 700px; margin: 0 auto; padding: 0 1rem 3rem; }
+  /* App header */
+  .app-header {
+    flex-direction : column;
+    align-items    : flex-start;
+    gap            : 8px;
+    margin-bottom  : 1rem;
+  }
+  .app-header-right { width: 100%; flex-wrap: wrap; gap: 6px; }
 
-  /* Page header */
-  .stats-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1rem 0 0.75rem;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .stats-header h1 {
-    font-size: 18px;
-    font-weight: 700;
-    color: var(--text-primary);
-    margin: 0;
-  }
-  .stats-header p {
-    font-size: 12px;
-    color: var(--text-tertiary);
-    margin: 2px 0 0;
-  }
+  /* Auth controls in nav (hidden with nav, but wrap just in case) */
+  #auth-controls { flex-wrap: wrap; }
 
-  /* Search / filter bar */
-  .search-bar {
-    display: flex;
-    gap: 8px;
-    margin-bottom: 1rem;
-    flex-wrap: wrap;
-  }
-  .search-bar input,
-  .search-bar select {
-    flex: 1;
-    min-width: 140px;
-    padding: 8px 12px;
-    font-size: 13px;
-    border: 1px solid var(--border-light);
-    border-radius: var(--radius-md);
-    background: var(--bg-secondary);
-    color: var(--text-primary);
-  }
-  .search-bar input:focus,
-  .search-bar select:focus {
-    outline: none;
-    border-color: var(--accent);
-  }
+  /* Schedule header */
+  .schedule-header { flex-direction: column; gap: 0.75rem; }
+  .schedule-header .btn-row { flex-wrap: wrap; }
 
-  /* Tab nav — reuse .tab / .tab-panel from styles.css */
+  /* Fixture screen stats boxes: 2 cols */
+  .stats-row { grid-template-columns: repeat(2, 1fr); }
 
-  /* Team card — used in Teams tab */
-  .team-card {
-    background: var(--bg-primary);
-    border: 0.5px solid var(--border-light);
-    border-radius: var(--radius-md);
-    padding: 0.85rem 1rem;
-    margin-bottom: 8px;
-    cursor: pointer;
-    transition: border-color 0.15s, box-shadow 0.15s;
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 12px;
-  }
-  .team-card:hover {
-    border-color: var(--accent);
-    box-shadow: 0 2px 10px rgba(29,158,117,0.12);
-  }
-  .team-card-name {
-    font-size: 14px;
-    font-weight: 600;
-    color: var(--text-primary);
-  }
-  .team-card-meta {
-    font-size: 11px;
-    color: var(--text-tertiary);
-    margin-top: 2px;
-  }
-  .team-card-stats {
-    display: flex;
-    gap: 16px;
-    flex-shrink: 0;
-  }
-  .team-card-stat {
-    text-align: center;
-  }
-  .team-card-stat-val {
-    font-size: 16px;
-    font-weight: 700;
-    color: var(--accent);
-  }
-  .team-card-stat-lbl {
-    font-size: 10px;
-    color: var(--text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
+  /* Format picker: 2 cols */
+  .format-grid { grid-template-columns: 1fr 1fr; }
 
-  /* Team detail panel */
-  .team-detail {
-    background: var(--bg-primary);
-    border: 0.5px solid var(--border-light);
-    border-radius: var(--radius-lg);
-    padding: 1.25rem;
-    margin-bottom: 1rem;
-  }
-  .team-detail-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-bottom: 1rem;
-    flex-wrap: wrap;
-    gap: 8px;
-  }
-  .team-detail-name {
-    font-size: 20px;
-    font-weight: 700;
-    color: var(--text-primary);
-  }
-  .team-detail-category {
-    font-size: 12px;
-    color: var(--text-tertiary);
-    margin-top: 3px;
-  }
-  .team-detail-stats {
-    display: grid;
-    grid-template-columns: repeat(4, 1fr);
-    gap: 8px;
-    margin-bottom: 1rem;
-  }
-  .detail-stat-box {
-    background: var(--bg-secondary);
-    border-radius: var(--radius-md);
-    padding: 10px 8px;
-    text-align: center;
-  }
-  .detail-stat-val {
-    font-size: 22px;
-    font-weight: 700;
-    color: var(--accent);
-  }
-  .detail-stat-lbl {
-    font-size: 10px;
-    color: var(--text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-top: 2px;
-  }
+  /* Team name inputs: single column */
+  .team-inputs-grid { grid-template-columns: 1fr; }
 
-  /* Tournament history table */
-  .history-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-  }
-  .history-table th {
-    padding: 6px 8px;
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    text-align: left;
-    background: var(--bg-secondary);
-  }
-  .history-table td {
-    padding: 8px;
-    border-top: 0.5px solid var(--border-light);
-    color: var(--text-primary);
-  }
-  .history-table tr:hover td { background: var(--bg-secondary); }
+  /* Tournament list items: stack actions below name */
+  .tournament-item { flex-direction: column; align-items: flex-start; gap: 8px; }
+  .tournament-item-actions { width: 100%; justify-content: flex-end; }
 
-  /* Head-to-head */
-  .h2h-selector {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    gap: 12px;
-    align-items: center;
-    margin-bottom: 1rem;
-  }
-  .h2h-vs {
-    font-size: 14px;
-    font-weight: 700;
-    color: var(--text-tertiary);
-    text-align: center;
-  }
-  .h2h-summary {
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    gap: 8px;
-    background: var(--bg-secondary);
-    border-radius: var(--radius-md);
-    padding: 1rem;
-    margin-bottom: 1rem;
-    text-align: center;
-  }
-  .h2h-wins {
-    font-size: 36px;
-    font-weight: 800;
-    color: var(--accent);
-  }
-  .h2h-label {
-    font-size: 11px;
-    color: var(--text-tertiary);
-    margin-top: 4px;
-  }
-  .h2h-divider {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 20px;
-    color: var(--text-tertiary);
-    font-weight: 300;
-  }
+  /* Match cards */
+  .match-card         { padding: 0.55rem 0.65rem; gap: 6px; }
+  .team-a, .team-b    { font-size: 12px; }
 
-  /* Rankings table */
-  .rankings-table {
-    width: 100%;
-    border-collapse: collapse;
-    font-size: 12px;
-    background: var(--bg-primary);
-    border-radius: var(--radius-md);
-    overflow: hidden;
-    border: 0.5px solid var(--border-light);
-  }
-  .rankings-table th {
-    padding: 8px 10px;
-    font-size: 10px;
-    font-weight: 600;
-    color: var(--text-tertiary);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    background: var(--bg-secondary);
-    cursor: pointer;
-    user-select: none;
-    white-space: nowrap;
-  }
-  .rankings-table th:hover { color: var(--accent); }
-  .rankings-table th.sorted { color: var(--accent); }
-  .rankings-table td {
-    padding: 8px 10px;
-    border-top: 0.5px solid var(--border-light);
-    color: var(--text-primary);
-  }
-  .rankings-table tr:hover td { background: var(--bg-secondary); }
-  .rank-num {
-    font-size: 11px;
-    font-weight: 700;
-    color: var(--text-tertiary);
-    width: 28px;
-  }
-  .rank-1 { color: #f59e0b; }
-  .rank-2 { color: #94a3b8; }
-  .rank-3 { color: #b45309; }
+  /* Modal → bottom sheet */
+  .modal-overlay { align-items: flex-end; padding: 0; }
+  .modal         { max-width: 100%; margin: auto 0 0; border-radius: var(--radius-lg) var(--radius-lg) 0 0; }
 
-  /* Empty / loading states */
-  .stats-empty {
-    text-align: center;
-    padding: 3rem 1rem;
-    color: var(--text-tertiary);
-    font-size: 13px;
-  }
-  .stats-empty-icon { font-size: 32px; display: block; margin-bottom: 0.5rem; }
+  /* Stats page: team detail 2×2 grid, hide card stat numbers to just label+val */
+  .team-detail-stats { grid-template-columns: repeat(2, 1fr); }
 
-  .spinner-inline {
-    display: inline-block;
-    width: 14px;
-    height: 14px;
-    border: 2px solid var(--border-light);
-    border-top-color: var(--accent);
-    border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    vertical-align: middle;
-    margin-right: 6px;
-  }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  /* Head-to-head selector: stack vertically */
+  .h2h-selector { grid-template-columns: 1fr; gap: 8px; }
+  .h2h-vs { display: none; }
 
-  /* Win rate bar */
-  .win-bar-wrap {
-    background: var(--bg-secondary);
-    border-radius: 99px;
-    height: 4px;
-    width: 60px;
-    overflow: hidden;
-    display: inline-block;
-    vertical-align: middle;
-    margin-left: 6px;
-  }
-  .win-bar-fill {
-    height: 100%;
-    background: var(--accent);
-    border-radius: 99px;
-  }
+  /* Team card stats: tighten gap */
+  .team-card-stats { gap: 10px; }
 
-  /* Placement badge */
-  .placement-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 22px;
-    height: 22px;
-    border-radius: 50%;
-    font-size: 11px;
-    font-weight: 700;
-  }
-  .placement-1 { background: #fef3c7; color: #f59e0b; }
-  .placement-2 { background: #f1f5f9; color: #94a3b8; }
-  .placement-3 { background: #fef3c7; color: #b45309; }
-  .placement-other { background: var(--bg-secondary); color: var(--text-tertiary); }
+  /* Rankings table: hide less-important columns via utility */
+  .rankings-hide-mobile { display: none; }
+}
+
+/* ── 601–768px : Tablet ──────────────────────────────────────────────────────
+   Top nav stays. Layout loosens relative to mobile but tighter than desktop.
+   ──────────────────────────────────────────────────────────────────────────── */
+@media (min-width: 601px) and (max-width: 768px) {
+  .page-wrapper { padding: 1.25rem 1rem 3rem; }
+
+  .schedule-header            { flex-wrap: wrap; }
+  .schedule-header .btn-row   { flex-wrap: wrap; }
+  .tournament-item-actions    { flex-wrap: wrap; }
+
+  /* Team inputs: 2 cols (already the default, explicit for clarity) */
+  .team-inputs-grid { grid-template-columns: 1fr 1fr; }
+
+  /* Fixture stats: 3 cols (already default) */
+  .stats-row { grid-template-columns: repeat(3, 1fr); }
+
+  /* Stats page detail: 2×2 on narrow tablet */
+  .team-detail-stats { grid-template-columns: repeat(2, 1fr); }
+}

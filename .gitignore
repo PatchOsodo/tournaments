@@ -10,5 +10,7 @@ nohup.out
 /home/tournaments/connect
 connect
 *.bak
+*.tar.gz
+*.zip
 restart.sh
 connect.sh

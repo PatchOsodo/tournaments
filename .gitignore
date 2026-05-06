@@ -9,3 +9,5 @@ pb_data
 nohup.out
 /home/tournaments/connect
 connect
+*.bak
+restart.sh

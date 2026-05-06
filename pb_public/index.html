@@ -7,6 +7,14 @@
 <link rel="stylesheet" href="assets/css/styles.css">
 </head>
 <body>
+ <nav class="app-nav" id="app-nav">
+  <div class="app-nav-links">
+    <a href="index.html" class="nav-link active" id="nav-home">🏠 Home</a>
+    <a href="stats.html" class="nav-link" id="nav-stats">📊 Stats</a>
+  </div>
+  <div id="auth-controls"></div>
+</nav>
+
 <div class="page-wrapper">
 <div class="app">
 
@@ -25,21 +33,6 @@
   </div>
 
   <!-- Auth bar — populated by App._renderAuthBar() -->
-  <div id="auth-bar" style="
-    display:flex;align-items:center;gap:10px;
-    padding:8px 1rem;
-    background:var(--bg-secondary);
-    border-bottom:0.5px solid var(--border-light);
-    justify-content:space-between;
-    flex-wrap:wrap;
-  ">
-    <!-- Left side: nav links -->
-    <div style="display:flex;gap:8px;">
-      <a href="stats.html" class="btn sm ghost">📊 Team Stats</a>
-    </div>
-    <!-- Right side: auth controls rendered by App._renderAuthBar() -->
-    <div id="auth-controls" style="display:flex;align-items:center;gap:10px;"></div>
-  </div>
 
   <!-- =====================================================================
        SCREEN 1: HOME
@@ -254,7 +247,18 @@
     </div>
   </div>
 </div>
-
+<!-- Bottom nav bar (mobile only) -->
+<nav class="bottom-nav">
+  <a href="index.html" class="bottom-nav-item active">
+    <span class="nav-icon">🏠</span>Home
+  </a>
+  <a href="stats.html" class="bottom-nav-item">
+    <span class="nav-icon">📊</span>Stats
+  </a>
+  <a href="login.html" class="bottom-nav-item" id="bottom-nav-auth">
+    <span class="nav-icon">👤</span>Account
+  </a>
+</nav>
 <!-- =========================================================================
      SCRIPTS — load in dependency order
      1. pocketbase.umd.js  — PocketBase SDK

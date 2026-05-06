@@ -243,6 +243,17 @@ const App = {
         <span style="font-size:12px;color:var(--text-tertiary);">Browsing as visitor</span>
         <a href="login.html" class="btn sm primary">Sign in / Register</a>`;
     }
+    
+    // Sync bottom nav Account tab label
+  const bottomAuthItem = document.getElementById('bottom-nav-auth');
+  if (bottomAuthItem) {
+    const user = Auth.user();
+    bottomAuthItem.innerHTML = user
+      ? `<span class="nav-icon">👤</span>${escHtml(user.name?.split(' ')[0] || 'Account')}`
+      : `<span class="nav-icon">👤</span>Sign in`;
+    bottomAuthItem.href = user ? '#' : 'login.html';
+    if (user) bottomAuthItem.onclick = () => Auth.logout();
+    }
   },
 
   async toggleFavourite(tournamentId, existingFavouriteId) {

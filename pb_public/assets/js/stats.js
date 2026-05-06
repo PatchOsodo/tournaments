@@ -1,0 +1,579 @@
+/* =============================================================================
+   STATS PAGE — app logic
+   ============================================================================= */
+
+// ── State ────────────────────────────────────────────────────────────────────
+let masterTeams  = [];   // all master_team records
+let allStats     = [];   // all team_stats records (expanded)
+let categories   = [];   // distinct category strings
+
+// Aggregated per master team: { id → { name, category, tournaments, wins,
+//   losses, points_for, points_against, placements[] } }
+let aggregated   = {};
+
+// ── Boot ─────────────────────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', async () => {
+  setConnectionStatus(await checkHealth());
+  renderAuthBar();
+  await loadData();
+});
+
+async function checkHealth() {
+  try { await pb.health.check(); return true; }
+  catch (e) { return false; }
+}
+
+function setConnectionStatus(online) {
+  const dot   = document.getElementById('conn-dot');
+  const label = document.getElementById('conn-label');
+  if (dot)   dot.className     = 'conn-dot ' + (online ? 'online' : 'offline');
+  if (label) label.textContent = online ? 'Connected' : 'Offline';
+}
+
+function renderAuthBar() {
+  const ctrl = document.getElementById('auth-controls');
+  if (!ctrl) return;
+  const user = pb.authStore.isValid ? pb.authStore.model : null;
+  if (user) {
+    const roleLabel = {
+      super_admin      : '⚡ Super Admin',
+      tournament_admin : '✏️ Tournament Admin',
+      guest            : '⭐ Guest',
+    }[user.role] || user.role;
+    ctrl.innerHTML = `
+      <span style="font-size:12px;color:var(--text-secondary);">
+        ${escHtml(user.name || user.email)}
+        <span style="margin-left:6px;font-size:10px;padding:2px 6px;border-radius:4px;
+                     background:var(--bg-secondary);color:var(--text-tertiary);
+                     border:0.5px solid var(--border-light);">${roleLabel}</span>
+      </span>
+      <button class="btn sm ghost" onclick="pb.authStore.clear();window.location.href='login.html'">
+        Sign out
+      </button>`;
+  } else {
+    ctrl.innerHTML = `<a href="login.html" class="btn sm primary">Sign in</a>`;
+  }
+}
+
+// ── Data loading ─────────────────────────────────────────────────────────────
+async function loadData() {
+  try {
+    [masterTeams, allStats] = await Promise.all([
+      pb.collection('master_teams').getFullList({ sort: 'name' }),
+      pb.collection('team_stats').getFullList({
+        sort  : '-created',
+        expand: 'master_team,tournament',
+      }),
+    ]);
+
+    // Build aggregated map
+    aggregated = {};
+    masterTeams.forEach(t => {
+      aggregated[t.id] = {
+        id          : t.id,
+        name        : t.name,
+        category    : t.category || '',
+        short_name  : t.short_name || '',
+        tournaments : 0,
+        wins        : 0,
+        losses      : 0,
+        points_for  : 0,
+        points_against: 0,
+        placements  : [],
+        history     : [],
+      };
+    });
+
+    allStats.forEach(s => {
+      const masterId = typeof s.master_team === 'object' ? s.master_team?.id : s.master_team;
+      const agg      = aggregated[masterId];
+      if (!agg) return;
+
+      agg.tournaments++;
+      agg.wins           += (s.wins           || 0);
+      agg.losses         += (s.losses         || 0);
+      agg.points_for     += (s.points_for     || 0);
+      agg.points_against += (s.points_against || 0);
+      if (s.placement) agg.placements.push(s.placement);
+
+      const tournName = s.expand?.tournament?.name || 'Unknown tournament';
+      const eventName = s.expand?.tournament?.event_name || '';
+      agg.history.push({
+        tournamentId   : typeof s.tournament === 'object' ? s.tournament?.id : s.tournament,
+        tournamentName : tournName,
+        eventName,
+        wins           : s.wins || 0,
+        losses         : s.losses || 0,
+        points_for     : s.points_for || 0,
+        points_against : s.points_against || 0,
+        placement      : s.placement || null,
+        group_name     : s.group_name || '',
+      });
+    });
+
+    // Distinct categories
+    categories = [...new Set(
+      masterTeams.map(t => t.category).filter(Boolean)
+    )].sort();
+
+    // Populate category filters
+    ['category-filter', 'rankings-category'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      const current = el.value;
+      el.innerHTML = '<option value="">All categories</option>' +
+        categories.map(c => `<option value="${escHtml(c)}">${escHtml(c)}</option>`).join('');
+      el.value = current;
+    });
+
+    // Populate H2H selects
+    ['h2h-team1','h2h-team2'].forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.innerHTML = '<option value="">Select a team</option>' +
+        masterTeams.map(t =>
+          `<option value="${t.id}">${escHtml(t.name)}${t.category ? ' — ' + escHtml(t.category) : ''}</option>`
+        ).join('');
+    });
+
+    // Summary line
+    const totalTournaments = new Set(allStats.map(s =>
+      typeof s.tournament === 'object' ? s.tournament?.id : s.tournament
+    )).size;
+    document.getElementById('stats-summary').textContent =
+      `${masterTeams.length} teams · ${allStats.length} tournament entries · ${totalTournaments} tournaments`;
+
+    renderTeams();
+    renderRankings();
+
+  } catch (e) {
+    console.error('loadData failed:', e);
+    document.getElementById('teams-list').innerHTML = `
+      <div class="stats-empty">
+        <span class="stats-empty-icon">⚠️</span>
+        Failed to load data: ${escHtml(e.message)}
+      </div>`;
+  }
+}
+
+// ── Tab switching ─────────────────────────────────────────────────────────────
+function switchTab(idx) {
+  document.querySelectorAll('.tab').forEach((t, i) => t.classList.toggle('active', i === idx));
+  document.querySelectorAll('.tab-panel').forEach((p, i) => p.classList.toggle('active', i === idx));
+}
+
+// ── TEAMS TAB ─────────────────────────────────────────────────────────────────
+function filterTeams() { renderTeams(); }
+
+function renderTeams() {
+  const search   = (document.getElementById('team-search')?.value || '').toLowerCase();
+  const category = document.getElementById('category-filter')?.value || '';
+  const list     = document.getElementById('teams-list');
+
+  const filtered = Object.values(aggregated).filter(t => {
+    const matchSearch   = !search   || t.name.toLowerCase().includes(search);
+    const matchCategory = !category || t.category === category;
+    return matchSearch && matchCategory && t.tournaments > 0;
+  }).sort((a, b) => b.wins - a.wins || a.name.localeCompare(b.name));
+
+  if (!filtered.length) {
+    list.innerHTML = `<div class="stats-empty">
+      <span class="stats-empty-icon">🔍</span>
+      No teams found${search ? ` matching "${escHtml(search)}"` : ''}.
+    </div>`;
+    return;
+  }
+
+  list.innerHTML = filtered.map(t => {
+    const total   = t.wins + t.losses;
+    const winPct  = total > 0 ? Math.round((t.wins / total) * 100) : 0;
+    const bestPlc = t.placements.length ? Math.min(...t.placements) : null;
+
+    return `<div class="team-card" onclick="openTeamModal('${t.id}')">
+      <div>
+        <div class="team-card-name">${escHtml(t.name)}</div>
+        <div class="team-card-meta">
+          ${t.category ? escHtml(t.category) + ' · ' : ''}
+          ${t.tournaments} tournament${t.tournaments !== 1 ? 's' : ''}
+          ${bestPlc ? ' · Best: ' + placementLabel(bestPlc) : ''}
+        </div>
+      </div>
+      <div class="team-card-stats">
+        <div class="team-card-stat">
+          <div class="team-card-stat-val">${t.wins}</div>
+          <div class="team-card-stat-lbl">Wins</div>
+        </div>
+        <div class="team-card-stat">
+          <div class="team-card-stat-val">${winPct}%</div>
+          <div class="team-card-stat-lbl">Win %</div>
+        </div>
+        <div class="team-card-stat">
+          <div class="team-card-stat-val" style="color:${pointDiff(t) >= 0 ? 'var(--accent)' : 'var(--danger)'}">
+            ${pointDiff(t) >= 0 ? '+' : ''}${pointDiff(t)}
+          </div>
+          <div class="team-card-stat-lbl">+/-</div>
+        </div>
+      </div>
+    </div>`;
+  }).join('');
+}
+
+// ── TEAM DETAIL MODAL ─────────────────────────────────────────────────────────
+function openTeamModal(teamId) {
+  const t = aggregated[teamId];
+  if (!t) return;
+
+  const total   = t.wins + t.losses;
+  const winPct  = total > 0 ? Math.round((t.wins / total) * 100) : 0;
+  const pd      = pointDiff(t);
+  const avgPtsFor  = total > 0 ? (t.points_for / total).toFixed(1) : '—';
+  const avgPtsAgst = total > 0 ? (t.points_against / total).toFixed(1) : '—';
+  const bestPlc = t.placements.length ? Math.min(...t.placements) : null;
+
+  document.getElementById('team-modal-title').textContent = t.name;
+
+  const historyRows = t.history
+    .sort((a, b) => (b.wins - a.wins))
+    .map(h => `
+      <tr>
+        <td>
+          <div style="font-weight:500;">${escHtml(h.tournamentName)}</div>
+          ${h.eventName ? `<div style="font-size:10px;color:var(--text-tertiary);">${escHtml(h.eventName)}</div>` : ''}
+          ${h.group_name ? `<div style="font-size:10px;color:var(--text-tertiary);">${escHtml(h.group_name)}</div>` : ''}
+        </td>
+        <td style="text-align:center;font-weight:600;color:var(--accent)">${h.wins}</td>
+        <td style="text-align:center">${h.losses}</td>
+        <td style="text-align:center;color:${(h.points_for-h.points_against)>=0?'var(--accent)':'var(--danger)'}">
+          ${h.points_for-h.points_against >= 0 ? '+' : ''}${h.points_for - h.points_against}
+        </td>
+        <td style="text-align:center">
+          ${h.placement ? placementBadge(h.placement) : '—'}
+        </td>
+      </tr>`).join('');
+
+  document.getElementById('team-modal-body').innerHTML = `
+    <div class="team-detail-stats">
+      <div class="detail-stat-box">
+        <div class="detail-stat-val">${t.tournaments}</div>
+        <div class="detail-stat-lbl">Tournaments</div>
+      </div>
+      <div class="detail-stat-box">
+        <div class="detail-stat-val">${winPct}%</div>
+        <div class="detail-stat-lbl">Win rate</div>
+      </div>
+      <div class="detail-stat-box">
+        <div class="detail-stat-val" style="color:${pd>=0?'var(--accent)':'var(--danger)'}">
+          ${pd>=0?'+':''}${pd}
+        </div>
+        <div class="detail-stat-lbl">Point diff</div>
+      </div>
+      <div class="detail-stat-box">
+        <div class="detail-stat-val">${bestPlc ? placementLabel(bestPlc) : '—'}</div>
+        <div class="detail-stat-lbl">Best finish</div>
+      </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:1rem;">
+      <div class="detail-stat-box">
+        <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${t.wins}W – ${t.losses}L</div>
+        <div class="detail-stat-lbl">Overall record</div>
+      </div>
+      <div class="detail-stat-box">
+        <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${avgPtsFor} / ${avgPtsAgst}</div>
+        <div class="detail-stat-lbl">Avg pts for / against</div>
+      </div>
+    </div>
+
+    <div style="font-size:12px;font-weight:600;color:var(--text-secondary);
+                text-transform:uppercase;letter-spacing:0.06em;margin-bottom:8px;">
+      Tournament history
+    </div>
+    ${t.history.length ? `
+      <div style="overflow-x:auto;">
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>Tournament</th>
+              <th style="text-align:center">W</th>
+              <th style="text-align:center">L</th>
+              <th style="text-align:center">+/-</th>
+              <th style="text-align:center">Finish</th>
+            </tr>
+          </thead>
+          <tbody>${historyRows}</tbody>
+        </table>
+      </div>` : `<div style="color:var(--text-tertiary);font-size:12px;">No tournament history yet.</div>`}`;
+
+  document.getElementById('team-modal-overlay').style.display = 'block';
+}
+
+function closeTeamModal(event) {
+  if (event && event.target !== document.getElementById('team-modal-overlay')) return;
+  document.getElementById('team-modal-overlay').style.display = 'none';
+}
+
+// ── HEAD TO HEAD TAB ──────────────────────────────────────────────────────────
+async function loadH2H() {
+  const t1Id = document.getElementById('h2h-team1')?.value;
+  const t2Id = document.getElementById('h2h-team2')?.value;
+  const out  = document.getElementById('h2h-result');
+
+  if (!t1Id || !t2Id || t1Id === t2Id) {
+    out.innerHTML = `<div class="stats-empty">
+      <span class="stats-empty-icon">⚔️</span>
+      Select two different teams to see their head-to-head record.
+    </div>`;
+    return;
+  }
+
+  out.innerHTML = `<div class="stats-empty">
+    <span class="spinner-inline"></span> Loading head-to-head data...
+  </div>`;
+
+  try {
+    // Fetch all tournament team instances for both master teams
+    const [t1Instances, t2Instances] = await Promise.all([
+        pb.collection('teams').getFullList({
+            filter     : `master_team="${t1Id}"`,
+            requestKey : `t1-instances-${t1Id}`,
+            }),
+            
+        pb.collection('teams').getFullList({
+            filter     : `master_team="${t2Id}"`,
+            requestKey : `t2-instances-${t2Id}`,
+            }),
+    ]);
+
+    const t1 = aggregated[t1Id];
+    const t2 = aggregated[t2Id];
+
+    // Find meetings — fixtures where they appeared in the same tournament
+    const meetings = [];
+    for (const ti1 of t1Instances) {
+      for (const ti2 of t2Instances) {
+        if (ti1.tournament !== ti2.tournament) continue;
+        try {
+          const fx = await pb.collection('fixtures').getFullList({
+            filter   : `tournament="${ti1.tournament}"&&status="completed"&&((home_team="${ti1.id}"&&away_team="${ti2.id}")||(home_team="${ti2.id}"&&away_team="${ti1.id}"))`,
+            expand   : 'home_team,away_team,tournament',
+            requestKey: `h2h-${ti1.id}-${ti2.id}`,
+            });
+          meetings.push(...fx.map(f => ({ ...f, _ti1: ti1.id, _ti2: ti2.id })));
+        } catch (_) {}
+      }
+    }
+
+    const t1Ids = new Set(t1Instances.map(t => t.id));
+
+    // Tally
+    let t1Wins = 0, t2Wins = 0;
+    let t1PtsFor = 0, t1PtsAgainst = 0;
+
+    meetings.forEach(f => {
+      const homeIsT1 = t1Ids.has(typeof f.home_team === 'object' ? f.home_team?.id : f.home_team);
+      const winnerId = typeof f.winner === 'object' ? f.winner?.id : f.winner;
+      const t1TeamId = homeIsT1
+        ? (typeof f.home_team === 'object' ? f.home_team?.id : f.home_team)
+        : (typeof f.away_team === 'object' ? f.away_team?.id : f.away_team);
+
+      const t1IsWinner = winnerId === t1TeamId ||
+        t1Ids.has(winnerId);
+
+      if (t1IsWinner) t1Wins++; else t2Wins++;
+
+      if (homeIsT1) {
+        t1PtsFor     += (f.home_score || 0);
+        t1PtsAgainst += (f.away_score || 0);
+      } else {
+        t1PtsFor     += (f.away_score || 0);
+        t1PtsAgainst += (f.home_score || 0);
+      }
+    });
+
+    if (!meetings.length) {
+      out.innerHTML = `<div class="stats-empty">
+        <span class="stats-empty-icon">🤝</span>
+        ${escHtml(t1?.name || 'Team A')} and ${escHtml(t2?.name || 'Team B')} have never met in a recorded match.
+      </div>`;
+      return;
+    }
+
+    const matchRows = meetings.map(f => {
+      const homeIsT1  = t1Ids.has(typeof f.home_team === 'object' ? f.home_team?.id : f.home_team);
+      const t1Score   = homeIsT1 ? (f.home_score || 0) : (f.away_score || 0);
+      const t2Score   = homeIsT1 ? (f.away_score || 0) : (f.home_score || 0);
+      const t1Won     = t1Score > t2Score;
+      const tournName = f.expand?.tournament?.name || 'Unknown';
+
+      return `<tr>
+        <td style="font-size:11px;color:var(--text-tertiary)">${escHtml(tournName)}</td>
+        <td style="text-align:center;font-weight:${t1Won?'700':'400'};
+                   color:${t1Won?'var(--accent)':'var(--text-primary)'}">
+          ${t1Score}
+        </td>
+        <td style="text-align:center;font-weight:${!t1Won?'700':'400'};
+                   color:${!t1Won?'var(--accent)':'var(--text-primary)'}">
+          ${t2Score}
+        </td>
+        <td style="text-align:center;font-size:11px;">
+          ${t1Won ? `<span style="color:var(--accent)">▲ ${escHtml(t1?.name||'')}</span>`
+                  : `<span style="color:var(--accent)">▲ ${escHtml(t2?.name||'')}</span>`}
+        </td>
+      </tr>`;
+    }).join('');
+
+    out.innerHTML = `
+      <div class="h2h-summary">
+        <div>
+          <div class="h2h-wins">${t1Wins}</div>
+          <div class="h2h-label">${escHtml(t1?.name || 'Team A')}</div>
+        </div>
+        <div class="h2h-divider">—</div>
+        <div>
+          <div class="h2h-wins">${t2Wins}</div>
+          <div class="h2h-label">${escHtml(t2?.name || 'Team B')}</div>
+        </div>
+      </div>
+
+      <div style="font-size:11px;color:var(--text-tertiary);text-align:center;margin-bottom:1rem;">
+        ${meetings.length} meeting${meetings.length !== 1 ? 's' : ''} recorded ·
+        ${escHtml(t1?.name||'')} avg ${meetings.length ? (t1PtsFor/meetings.length).toFixed(1) : 0} pts ·
+        ${escHtml(t2?.name||'')} avg ${meetings.length ? (t1PtsAgainst/meetings.length).toFixed(1) : 0} pts
+      </div>
+
+      <div style="overflow-x:auto;">
+        <table class="history-table">
+          <thead>
+            <tr>
+              <th>Tournament</th>
+              <th style="text-align:center">${escHtml(t1?.name||'Team A')}</th>
+              <th style="text-align:center">${escHtml(t2?.name||'Team B')}</th>
+              <th style="text-align:center">Winner</th>
+            </tr>
+          </thead>
+          <tbody>${matchRows}</tbody>
+        </table>
+      </div>`;
+
+  } catch (e) {
+    out.innerHTML = `<div class="stats-empty">
+      <span class="stats-empty-icon">⚠️</span>
+      Failed to load head-to-head: ${escHtml(e.message)}
+    </div>`;
+  }
+}
+
+// ── RANKINGS TAB ──────────────────────────────────────────────────────────────
+let rankingsSortDir = {};  // { field: 'asc'|'desc' }
+
+function renderRankings() {
+  const category = document.getElementById('rankings-category')?.value || '';
+  const sortBy   = document.getElementById('rankings-sort')?.value || 'win_pct';
+  const wrap     = document.getElementById('rankings-table-wrap');
+
+  const teams = Object.values(aggregated).filter(t => {
+    return t.tournaments > 0 && (!category || t.category === category);
+  });
+
+  if (!teams.length) {
+    wrap.innerHTML = `<div class="stats-empty">
+      <span class="stats-empty-icon">🏅</span>
+      No data yet${category ? ' for ' + escHtml(category) : ''}.
+    </div>`;
+    return;
+  }
+
+  // Compute derived fields
+  const withDerived = teams.map(t => {
+    const total    = t.wins + t.losses;
+    const win_pct  = total > 0 ? t.wins / total : 0;
+    const pd       = pointDiff(t);
+    const avg_pts  = total > 0 ? t.points_for / total : 0;
+    return { ...t, total, win_pct, point_diff: pd, avg_pts };
+  });
+
+  // Sort
+  const sorted = withDerived.sort((a, b) => {
+    switch (sortBy) {
+      case 'win_pct'    : return b.win_pct    - a.win_pct    || b.wins - a.wins;
+      case 'wins'       : return b.wins       - a.wins       || b.win_pct - a.win_pct;
+      case 'point_diff' : return b.point_diff - a.point_diff;
+      case 'points_for' : return b.points_for - a.points_for;
+      case 'tournaments': return b.tournaments - a.tournaments;
+      default           : return b.win_pct - a.win_pct;
+    }
+  });
+
+  const rows = sorted.map((t, i) => {
+    const rank    = i + 1;
+    const winPct  = Math.round(t.win_pct * 100);
+    const pd      = t.point_diff;
+    const bestPlc = t.placements.length ? Math.min(...t.placements) : null;
+
+    return `<tr style="cursor:pointer;" onclick="openTeamModal('${t.id}')">
+      <td class="rank-num rank-${rank <= 3 ? rank : 'other'}">${rank}</td>
+      <td>
+        <div style="font-weight:500;">${escHtml(t.name)}</div>
+        ${t.category ? `<div style="font-size:10px;color:var(--text-tertiary);">${escHtml(t.category)}</div>` : ''}
+      </td>
+      <td style="text-align:center">${t.tournaments}</td>
+      <td style="text-align:center;font-weight:600;color:var(--accent)">${t.wins}</td>
+      <td style="text-align:center">${t.losses}</td>
+      <td style="text-align:center">
+        ${winPct}%
+        <span class="win-bar-wrap">
+          <span class="win-bar-fill" style="width:${winPct}%"></span>
+        </span>
+      </td>
+      <td style="text-align:center;color:${pd>=0?'var(--accent)':'var(--danger)'}">
+        ${pd>=0?'+':''}${pd}
+      </td>
+      <td style="text-align:center">
+        ${bestPlc ? placementBadge(bestPlc) : '—'}
+      </td>
+    </tr>`;
+  }).join('');
+
+  wrap.innerHTML = `
+    <div style="overflow-x:auto;">
+      <table class="rankings-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Team</th>
+            <th style="text-align:center" title="Tournaments played">T</th>
+            <th style="text-align:center" title="Wins">W</th>
+            <th style="text-align:center" title="Losses">L</th>
+            <th style="text-align:center" title="Win percentage">Win %</th>
+            <th style="text-align:center" title="Point differential">+/-</th>
+            <th style="text-align:center" title="Best placement">Best</th>
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+function pointDiff(t) {
+  return (t.points_for || 0) - (t.points_against || 0);
+}
+
+function placementLabel(p) {
+  if (p === 1) return '🥇 1st';
+  if (p === 2) return '🥈 2nd';
+  if (p === 3) return '🥉 3rd';
+  return `${p}th`;
+}
+
+function placementBadge(p) {
+  const cls = p <= 3 ? `placement-${p}` : 'placement-other';
+  const lbl = p === 1 ? '🥇' : p === 2 ? '🥈' : p === 3 ? '🥉' : p;
+  return `<span class="placement-badge ${cls}">${lbl}</span>`;
+}
+
+function escHtml(str) {
+  return String(str)
+    .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
+    .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}

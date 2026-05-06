@@ -230,7 +230,7 @@ const DB = {
       try {
         // Check if a record already exists for this master_team + tournament
         const existing = await pb.collection('team_stats').getFullList({
-          filter: `master_team = "${stat.masterId}" && tournament = "${tournamentId}"`,
+          filter: `master_team="${stat.masterId}"&&tournament="${tournamentId}"`,
         });
 
         const data = {
@@ -337,8 +337,10 @@ const DB = {
             const fx = await pb.collection('fixtures').getFullList({
               filter : `tournament = "${t1.tournament}" && ((home_team = "${t1.id}" && away_team = "${t2.id}") || (home_team = "${t2.id}" && away_team = "${t1.id}")) && status = "completed"`,
               expand : 'home_team,away_team,winner,tournament',
+              requestKey : `h2h-db-${t1.id}-${t2.id}`,
             });
             meetings.push(...fx);
+            
           } catch (e) {
             Logger.warn('DB.getHeadToHead: fixture query failed', { error: e.message });
           }

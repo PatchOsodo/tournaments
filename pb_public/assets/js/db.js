@@ -1,14 +1,36 @@
 /**
  * =============================================================================
- * db.js — Database layer (all PocketBase calls) + Migration functions
+ * db.js — Database layer + Migration functions
  *
  * Depends on: config.js, logger.js, auth.js, state.js, generators.js
+ *
+ * CHANGES
+ * -------
+ * - master_teams now use gender + age_group instead of category text field.
+ * - categoryString() helper derives "U16 Boys" from { age_group, gender }.
+ * - findMasterTeam matches on name + gender + age_group.
+ * - createMasterTeam accepts gender and age_group separately.
+ * - All filter strings use no spaces around operators (PocketBase strict mode).
+ * - requestKey: null on all getFullList calls to prevent auto-cancellation.
  * =============================================================================
  */
 
-/* =============================================================================
-   DATABASE LAYER
-   ============================================================================= */
+/**
+ * Derive a human-readable category string from a master_team record.
+ * Used wherever a single category label is needed (stats, rankings, etc.)
+ *
+ * @param {object} team  - master_team record with age_group and gender fields
+ * @returns {string}     - e.g. "U16 Boys", "U13 Girls", "Senior Mixed"
+ */
+function categoryString(team) {
+  const ag = (team?.age_group || '').trim();
+  const g  = (team?.gender    || '').trim();
+  if (ag && g)  return `${ag} ${g}`;
+  if (ag)       return ag;
+  if (g)        return g;
+  return 'Uncategorised';
+}
+
 const DB = {
 
   /* ── HEALTH ─────────────────────────────────────────────────────────── */
@@ -27,12 +49,18 @@ const DB = {
   /* ── TOURNAMENTS ─────────────────────────────────────────────────────── */
 
   async getTournaments() {
-    return pb.collection('tournaments').getFullList({ sort: '-created' });
+    return pb.collection('tournaments').getFullList({
+      sort      : '-created',
+      requestKey: null,
+    });
   },
 
   async getEvents() {
     try {
-      const all   = await pb.collection('tournaments').getFullList({ fields: 'event_name' });
+      const all   = await pb.collection('tournaments').getFullList({
+        fields    : 'event_name',
+        requestKey: null,
+      });
       const names = [...new Set(all.map(t => t.event_name).filter(Boolean))].sort();
       Logger.debug('DB.getEvents', { count: names.length });
       return names;
@@ -42,14 +70,17 @@ const DB = {
     }
   },
 
-  async createTournament(name, format, eventName = null) {
-    Logger.info('DB.createTournament', { name, format, eventName });
-    return pb.collection('tournaments').create({
-      name, format,
-      status     : 'pending',
-      event_name : eventName || null,
-    });
-  },
+  async createTournament(name, format, eventName = null, eventSeries = null, eventEdition = null) {
+      Logger.info('DB.createTournament', { name, format, eventName, eventSeries, eventEdition });
+      return pb.collection('tournaments').create({
+        name,
+        format,
+        status        : 'pending',
+        event_name    : eventName    || null,
+        event_series  : eventSeries  || null,
+        event_edition : eventEdition || null,
+      });
+    },
 
   async updateTournament(id, data) {
     return pb.collection('tournaments').update(id, data);
@@ -64,27 +95,40 @@ const DB = {
 
   /**
    * Fetch all master teams, sorted by name.
-   * Optionally filter by category (e.g. "U16 Boys").
+   * Optionally filter by gender and/or age_group.
    */
-  async getMasterTeams(category = null) {
-    const filter = category ? `category = "${category}"` : '';
+  async getMasterTeams(gender = null, ageGroup = null) {
+    const filters = [];
+    if (gender)   filters.push(`gender="${gender}"`);
+    if (ageGroup) filters.push(`age_group="${ageGroup}"`);
+    const filter = filters.join('&&') || undefined;
+
     return pb.collection('master_teams').getFullList({
-      filter : filter || undefined,
-      sort   : 'name',
+      filter,
+      sort      : 'name',
+      requestKey: null,
     });
   },
 
   /**
-   * Find a master team by name (case-insensitive).
-   * Returns the record or null if not found.
+   * Find a master team by name + gender + age_group.
+   *
+   * The combination of name + gender + age_group is the identity key.
+   * SHAURI in U16 Boys and SHAURI in U13 Girls are different entities.
    */
-  async findMasterTeam(name) {
+  async findMasterTeam(name, gender = null, ageGroup = null) {
     try {
+      const filters = [`name="${name}"`];
+      filters.push(gender   ? `gender="${gender}"`       : `gender=""`);
+      filters.push(ageGroup ? `age_group="${ageGroup}"` : `age_group=""`);
+
       const results = await pb.collection('master_teams').getFullList({
-        filter: `name = "${name}"`,
+        filter    : filters.join('&&'),
+        requestKey: null,
       });
       return results[0] ?? null;
     } catch (e) {
+      Logger.warn('DB.findMasterTeam failed', { name, gender, ageGroup, error: e.message });
       return null;
     }
   },
@@ -92,11 +136,12 @@ const DB = {
   /**
    * Create a new master team record.
    */
-  async createMasterTeam(name, category = null, shortName = null, homeCourt = null) {
-    Logger.info('DB.createMasterTeam', { name, category });
+  async createMasterTeam(name, gender = null, ageGroup = null, shortName = null, homeCourt = null) {
+    Logger.info('DB.createMasterTeam', { name, gender, ageGroup });
     return pb.collection('master_teams').create({
       name,
-      category   : category   || null,
+      gender     : gender     || null,
+      age_group  : ageGroup   || null,
       short_name : shortName  || null,
       home_court : homeCourt  || null,
       active     : true,
@@ -104,44 +149,62 @@ const DB = {
   },
 
   /**
-   * Get or create a master team by name.
-   * Used during tournament setup so returning teams are linked automatically.
+   * Update an existing master team record.
+   */
+  async updateMasterTeam(id, data) {
+    Logger.info('DB.updateMasterTeam', { id });
+    return pb.collection('master_teams').update(id, data);
+  },
+
+  /**
+   * Delete a master team record.
+   */
+  async deleteMasterTeam(id) {
+    Logger.warn('DB.deleteMasterTeam', { id });
+    return pb.collection('master_teams').delete(id);
+  },
+
+  /**
+   * Get or create a master team by name + gender + age_group.
    *
-   * @param {string} name       - Team name as entered
-   * @param {string} category   - Tournament category (e.g. "U16 Boys")
+   * Called during tournament setup so returning teams are linked automatically.
+   * If the team name matches an existing record with the same gender + age_group,
+   * the existing record is reused. Otherwise a new one is created.
+   *
+   * @param {string}      name
+   * @param {string|null} gender    - "Boys" | "Girls" | "Mixed"
+   * @param {string|null} ageGroup  - e.g. "U16", "U13", "Senior"
    * @returns {string} master_team record ID
    */
-  async getOrCreateMasterTeam(name, category = null) {
-    const existing = await DB.findMasterTeam(name);
+  async getOrCreateMasterTeam(name, gender = null, ageGroup = null) {
+    const existing = await DB.findMasterTeam(name, gender, ageGroup);
     if (existing) {
-      Logger.debug('DB.getOrCreateMasterTeam: found existing', { name, id: existing.id });
+      Logger.debug('DB.getOrCreateMasterTeam: found', { name, gender, ageGroup, id: existing.id });
       return existing.id;
     }
-    const created = await DB.createMasterTeam(name, category);
-    Logger.info('DB.getOrCreateMasterTeam: created new', { name, id: created.id });
+    const created = await DB.createMasterTeam(name, gender, ageGroup);
+    Logger.info('DB.getOrCreateMasterTeam: created', { name, gender, ageGroup, id: created.id });
     return created.id;
   },
 
   /* ── TOURNAMENT TEAMS ────────────────────────────────────────────────── */
 
-  /**
-   * Create a per-tournament team record, linked to its master_team.
-   */
   async createTeam(tournamentId, name, seed, groupName, masterTeamId = null) {
     return pb.collection('teams').create({
       tournament  : tournamentId,
       name,
-      seed        : seed      ?? null,
-      group_name  : groupName ?? null,
+      seed        : seed        ?? null,
+      group_name  : groupName   ?? null,
       master_team : masterTeamId ?? null,
     });
   },
 
   async getTeams(tournamentId) {
     return pb.collection('teams').getFullList({
-      filter : `tournament = "${tournamentId}"`,
-      sort   : 'seed',
-      expand : 'master_team',
+      filter    : `tournament="${tournamentId}"`,
+      sort      : 'seed',
+      expand    : 'master_team',
+      requestKey: null,
     });
   },
 
@@ -153,9 +216,10 @@ const DB = {
 
   async getFixtures(tournamentId) {
     return pb.collection('fixtures').getFullList({
-      filter : `tournament = "${tournamentId}"`,
-      sort   : 'round,match_number',
-      expand : 'home_team,away_team,winner',
+      filter    : `tournament="${tournamentId}"`,
+      sort      : 'round,match_number',
+      expand    : 'home_team,away_team,winner',
+      requestKey: null,
     });
   },
 
@@ -169,68 +233,57 @@ const DB = {
     });
   },
 
-  /* ── TEAM STATS (databank) ───────────────────────────────────────────── */
+  /* ── TEAM STATS ──────────────────────────────────────────────────────── */
 
-  /**
-   * Compute and save team stats after a tournament completes.
-   * Called automatically when all fixtures are marked completed.
-   *
-   * @param {string} tournamentId
-   * @param {Array}  fixtures     - All fixtures for the tournament
-   * @param {Array}  teams        - All team records for the tournament
-   */
   async saveTeamStats(tournamentId, fixtures, teams) {
     Logger.info('DB.saveTeamStats', { tournamentId });
 
     const realFx = fixtures.filter(f => !f.is_bye && f.status === 'completed');
 
-    // Build per-team stats
     const statsMap = {};
     teams.forEach(t => {
-      if (!t.master_team) return; // skip teams not linked to master
+      if (!t.master_team) return;
       const masterId = typeof t.master_team === 'object' ? t.master_team.id : t.master_team;
       statsMap[t.id] = {
-        teamId      : t.id,
+        teamId        : t.id,
         masterId,
-        wins        : 0,
-        losses      : 0,
-        points_for  : 0,
+        wins          : 0,
+        losses        : 0,
+        points_for    : 0,
         points_against: 0,
-        group_name  : t.group_name || null,
+        group_name    : t.group_name || null,
       };
     });
 
     realFx.forEach(f => {
       const resolveId = v => typeof v === 'object' ? v?.id : v;
-      const homeId = resolveId(f.home_team);
-      const awayId = resolveId(f.away_team);
-      const home   = statsMap[homeId];
-      const away   = statsMap[awayId];
+      const homeId    = resolveId(f.home_team);
+      const awayId    = resolveId(f.away_team);
+      const home      = statsMap[homeId];
+      const away      = statsMap[awayId];
 
       if (home) {
-        home.points_for    += (f.home_score || 0);
+        home.points_for     += (f.home_score || 0);
         home.points_against += (f.away_score || 0);
         if ((f.home_score || 0) > (f.away_score || 0)) home.wins++;
         else home.losses++;
       }
       if (away) {
-        away.points_for    += (f.away_score || 0);
+        away.points_for     += (f.away_score || 0);
         away.points_against += (f.home_score || 0);
         if ((f.away_score || 0) > (f.home_score || 0)) away.wins++;
         else away.losses++;
       }
     });
 
-    // Determine final placement from knockout results
-    const placements = DB._computePlacements(fixtures, teams);
+    const placements = DB._computePlacements(fixtures);
 
-    // Upsert team_stats records
     for (const stat of Object.values(statsMap)) {
       if (!stat.masterId) continue;
       try {
-        // Check if a record already exists for this master_team + tournament
         const existing = await pb.collection('team_stats').getFullList({
-          filter: `master_team="${stat.masterId}"&&tournament="${tournamentId}"`,
+          filter    : `master_team="${stat.masterId}"&&tournament="${tournamentId}"`,
+          requestKey: null,
         });
 
         const data = {
@@ -246,37 +299,25 @@ const DB = {
 
         if (existing.length) {
           await pb.collection('team_stats').update(existing[0].id, data);
-          Logger.debug('DB.saveTeamStats: updated', { masterId: stat.masterId });
         } else {
           await pb.collection('team_stats').create(data);
-          Logger.debug('DB.saveTeamStats: created', { masterId: stat.masterId });
         }
+        Logger.debug('DB.saveTeamStats: saved', { masterId: stat.masterId });
       } catch (e) {
-        Logger.warn('DB.saveTeamStats: failed for team', { masterId: stat.masterId, error: e.message });
+        Logger.warn('DB.saveTeamStats: failed', { masterId: stat.masterId, error: e.message });
       }
     }
 
     Logger.info('DB.saveTeamStats: complete', { count: Object.keys(statsMap).length });
   },
 
-  /**
-   * Compute final placements (1st, 2nd, etc.) from fixture results.
-   * Uses the knockout bracket winner as 1st, finalist as 2nd, etc.
-   *
-   * @returns {object} { teamId: placement }
-   */
-  _computePlacements(fixtures, teams) {
+  _computePlacements(fixtures) {
     const placements = {};
-    const knockoutFx = fixtures
-      .filter(f => !f.group_name && !f.is_bye && f.status === 'completed')
-      .sort((a, b) => b.round - b.round || b.match_number - a.match_number);
+    const resolveId  = v => typeof v === 'object' ? v?.id : v;
 
-    if (!knockoutFx.length) return placements;
-
-    const resolveId = v => typeof v === 'object' ? v?.id : v;
-
-    // Final — winner gets 1st, loser gets 2nd
-    const finalFx = knockoutFx.find(f => f.round_label === 'Final');
+    const finalFx = fixtures.find(f =>
+      f.round_label === 'Final' && f.status === 'completed'
+    );
     if (finalFx) {
       const winnerId = resolveId(finalFx.winner);
       const homeId   = resolveId(finalFx.home_team);
@@ -286,73 +327,27 @@ const DB = {
       if (loserId)  placements[loserId]  = 2;
     }
 
-    // Semifinalists — losers get 3rd/4th
-    const semiFx = knockoutFx.filter(f => f.round_label === 'Semifinals');
-    let placement = 3;
-    semiFx.forEach(f => {
-      const winnerId = resolveId(f.winner);
-      const homeId   = resolveId(f.home_team);
-      const awayId   = resolveId(f.away_team);
-      const loserId  = winnerId === homeId ? awayId : homeId;
-      if (loserId && !placements[loserId]) placements[loserId] = placement++;
-    });
+    let p = 3;
+    fixtures
+      .filter(f => f.round_label === 'Semifinals' && f.status === 'completed')
+      .forEach(f => {
+        const winnerId = resolveId(f.winner);
+        const homeId   = resolveId(f.home_team);
+        const awayId   = resolveId(f.away_team);
+        const loserId  = winnerId === homeId ? awayId : homeId;
+        if (loserId && !placements[loserId]) placements[loserId] = p++;
+      });
 
     return placements;
   },
 
-  /**
-   * Fetch cross-tournament stats for a master team.
-   * Returns all team_stats records with tournament expanded.
-   */
   async getMasterTeamStats(masterTeamId) {
     return pb.collection('team_stats').getFullList({
-      filter : `master_team = "${masterTeamId}"`,
-      sort   : '-created',
-      expand : 'tournament',
+      filter    : `master_team="${masterTeamId}"`,
+      sort      : '-created',
+      expand    : 'tournament',
+      requestKey: null,
     });
-  },
-
-  /**
-   * Fetch head-to-head record between two master teams.
-   * Scans all fixtures where both teams appeared.
-   */
-  async getHeadToHead(masterTeamId1, masterTeamId2) {
-    Logger.info('DB.getHeadToHead', { masterTeamId1, masterTeamId2 });
-    try {
-      // Get per-tournament team IDs for both master teams
-      const [team1Instances, team2Instances] = await Promise.all([
-        pb.collection('teams').getFullList({ filter: `master_team = "${masterTeamId1}"` }),
-        pb.collection('teams').getFullList({ filter: `master_team = "${masterTeamId2}"` }),
-      ]);
-
-      const team1Ids = new Set(team1Instances.map(t => t.id));
-      const team2Ids = new Set(team2Instances.map(t => t.id));
-
-      // Find all fixtures where they met
-      const meetings = [];
-      for (const t1 of team1Instances) {
-        for (const t2 of team2Instances) {
-          if (t1.tournament !== t2.tournament) continue;
-          try {
-            const fx = await pb.collection('fixtures').getFullList({
-              filter : `tournament = "${t1.tournament}" && ((home_team = "${t1.id}" && away_team = "${t2.id}") || (home_team = "${t2.id}" && away_team = "${t1.id}")) && status = "completed"`,
-              expand : 'home_team,away_team,winner,tournament',
-              requestKey : `h2h-db-${t1.id}-${t2.id}`,
-            });
-            meetings.push(...fx);
-            
-          } catch (e) {
-            Logger.warn('DB.getHeadToHead: fixture query failed', { error: e.message });
-          }
-        }
-      }
-
-      Logger.info('DB.getHeadToHead: found meetings', { count: meetings.length });
-      return { meetings, team1Ids, team2Ids };
-    } catch (e) {
-      Logger.error('DB.getHeadToHead failed', { error: e.message });
-      return { meetings: [], team1Ids: new Set(), team2Ids: new Set() };
-    }
   },
 
   /* ── FAVOURITES ──────────────────────────────────────────────────────── */
@@ -361,8 +356,9 @@ const DB = {
     if (!Auth.canFavourite()) return [];
     try {
       return await pb.collection('favourites').getFullList({
-        filter : `user = "${Auth.user().id}"`,
-        expand : 'tournament',
+        filter    : `user="${Auth.user().id}"`,
+        expand    : 'tournament',
+        requestKey: null,
       });
     } catch (e) {
       Logger.warn('getFavourites failed', { error: e.message });
@@ -372,8 +368,8 @@ const DB = {
 
   async addFavourite(tournamentId) {
     return pb.collection('favourites').create({
-      user       : Auth.user().id,
-      tournament : tournamentId,
+      user      : Auth.user().id,
+      tournament: tournamentId,
     });
   },
 
@@ -395,7 +391,8 @@ const DB = {
 
     try {
       const nextFx = await pb.collection('fixtures').getFullList({
-        filter: `tournament = "${tournamentId}" && round = ${nextRound} && match_number = ${nextMatchNumber}`,
+        filter    : `tournament="${tournamentId}"&&round=${nextRound}&&match_number=${nextMatchNumber}`,
+        requestKey: null,
       });
       if (!nextFx.length) { Logger.warn('advanceWinner: no next fixture'); return; }
       await pb.collection('fixtures').update(nextFx[0].id, { [slot]: winnerTeamId });
@@ -412,12 +409,13 @@ const DB = {
 
     try {
       const nextFx = await pb.collection('fixtures').getFullList({
-        filter: `tournament = "${tournamentId}" && round = ${nextRound} && match_number = ${nextMatchNumber}`,
+        filter    : `tournament="${tournamentId}"&&round=${nextRound}&&match_number=${nextMatchNumber}`,
+        requestKey: null,
       });
       if (!nextFx.length) return;
       await pb.collection('fixtures').update(nextFx[0].id, {
-        [slot]: null, status: 'scheduled', winner: null,
-        home_score: null, away_score: null,
+        [slot]: null, status: 'scheduled',
+        winner: null, home_score: null, away_score: null,
       });
     } catch (e) {
       Logger.warn('clearAdvancedWinner failed', { error: e.message });
@@ -431,7 +429,8 @@ const DB = {
 
     try {
       const expected = await pb.collection('fixtures').getFullList({
-        filter: `tournament = "${tournamentId}" && round = ${nextRound} && match_number = ${nextMatchNumber} && !is_bye`,
+        filter    : `tournament="${tournamentId}"&&round=${nextRound}&&match_number=${nextMatchNumber}&&is_bye=false`,
+        requestKey: null,
       });
 
       if (expected.length) {
@@ -445,8 +444,9 @@ const DB = {
 
       // Fallback scan for old buggy round numbers
       const allKnockout = await pb.collection('fixtures').getFullList({
-        filter: `tournament = "${tournamentId}" && group_name = "" && !is_bye`,
-        sort  : 'round,match_number',
+        filter    : `tournament="${tournamentId}"&&group_name=""&&is_bye=false`,
+        sort      : 'round,match_number',
+        requestKey: null,
       });
 
       const rounds          = [...new Set(allKnockout.map(f => f.round))].sort((a, b) => a - b);
@@ -463,11 +463,12 @@ const DB = {
       if (targetFixtureIdx >= nextRoundFx.length) return;
 
       const targetFx   = nextRoundFx[targetFixtureIdx];
-      const currentVal = typeof targetFx[targetSlot] === 'object' ? targetFx[targetSlot]?.id : targetFx[targetSlot];
+      const currentVal = typeof targetFx[targetSlot] === 'object'
+        ? targetFx[targetSlot]?.id : targetFx[targetSlot];
       if (currentVal === winnerTeamId) return;
 
       await pb.collection('fixtures').update(targetFx.id, { [targetSlot]: winnerTeamId });
-      Logger.warn('repairNextFixture: patched via scan', { fixtureId: targetFx.id, slot: targetSlot });
+      Logger.warn('repairNextFixture: patched via scan', { fixtureId: targetFx.id });
 
     } catch (e) {
       Logger.warn('repairNextFixture failed', { error: e.message });
@@ -478,9 +479,10 @@ const DB = {
     Logger.info('DB.seedKnockoutFromGroups: checking group completion');
 
     const freshFixtures = await pb.collection('fixtures').getFullList({
-      filter: `tournament = "${tournamentId}"`,
-      sort  : 'round,match_number',
-      expand: 'home_team,away_team,winner',
+      filter    : `tournament="${tournamentId}"`,
+      sort      : 'round,match_number',
+      expand    : 'home_team,away_team,winner',
+      requestKey: null,
     });
 
     const groupFxAll = freshFixtures.filter(f => f.group_name && !f.is_bye);
@@ -533,14 +535,15 @@ const DB = {
 };  // ← end of DB object
 
 /* =============================================================================
-   MIGRATION — repair tournaments created with old buggy round numbering.
-   Standalone async functions (NOT inside DB).
+   MIGRATION — standalone async functions
    ============================================================================= */
 async function migrateExistingTournaments() {
   Logger.info('Migration: checking for broken tournaments');
   let tournaments;
   try {
-    tournaments = await pb.collection('tournaments').getFullList({ sort: '-created' });
+    tournaments = await pb.collection('tournaments').getFullList({
+      sort: '-created', requestKey: null,
+    });
   } catch (e) {
     Logger.error('Migration: failed to fetch', { error: e.message });
     return;
@@ -556,11 +559,14 @@ async function migrateExistingTournaments() {
 
 async function _migrateTournament(tournament) {
   const [allTeams, allFixtures] = await Promise.all([
-    pb.collection('teams').getFullList({ filter: `tournament = "${tournament.id}"`, sort: 'seed' }),
+    pb.collection('teams').getFullList({
+      filter: `tournament="${tournament.id}"`, sort: 'seed', requestKey: null,
+    }),
     pb.collection('fixtures').getFullList({
-      filter: `tournament = "${tournament.id}"`,
+      filter: `tournament="${tournament.id}"`,
       sort  : 'round,match_number',
       expand: 'home_team,away_team,winner',
+      requestKey: null,
     }),
   ]);
 
@@ -589,11 +595,15 @@ async function _migrateTournament(tournament) {
     if (idx === -1 || idx + 1 >= rounds.length) continue;
 
     const nextRound      = rounds[idx + 1];
-    const currentRoundFx = knockoutFx.filter(f => f.round === fx.round).sort((a, b) => a.match_number - b.match_number);
-    const posInRound     = currentRoundFx.findIndex(f => f.id === fx.id);
-    const slot           = posInRound % 2 === 0 ? 'home_team' : 'away_team';
-    const nextRoundFx    = knockoutFx.filter(f => f.round === nextRound).sort((a, b) => a.match_number - b.match_number);
-    const nextFx         = nextRoundFx[Math.floor(posInRound / 2)];
+    const currentRoundFx = knockoutFx
+      .filter(f => f.round === fx.round)
+      .sort((a, b) => a.match_number - b.match_number);
+    const posInRound  = currentRoundFx.findIndex(f => f.id === fx.id);
+    const slot        = posInRound % 2 === 0 ? 'home_team' : 'away_team';
+    const nextRoundFx = knockoutFx
+      .filter(f => f.round === nextRound)
+      .sort((a, b) => a.match_number - b.match_number);
+    const nextFx = nextRoundFx[Math.floor(posInRound / 2)];
     if (!nextFx) continue;
 
     const winnerId   = typeof fx.winner === 'object' ? fx.winner.id : fx.winner;
@@ -606,11 +616,15 @@ async function _migrateTournament(tournament) {
 }
 
 async function _migrateSeeding(tournamentId, allTeams, allFixtures, knockoutFx) {
-  const groupNames    = [...new Set(allFixtures.filter(f => f.group_name && !f.is_bye).map(f => f.group_name))].sort();
-  const groupRankings = groupNames.map(gName => _computeGroupStandings(allFixtures, allTeams, gName).slice(0, 2));
-  const firsts        = groupRankings.map(g => g[0]);
-  const seconds       = groupRankings.map(g => g[1]);
-  const advancers     = [];
+  const groupNames    = [...new Set(
+    allFixtures.filter(f => f.group_name && !f.is_bye).map(f => f.group_name)
+  )].sort();
+  const groupRankings = groupNames.map(gName =>
+    _computeGroupStandings(allFixtures, allTeams, gName).slice(0, 2)
+  );
+  const firsts  = groupRankings.map(g => g[0]);
+  const seconds = groupRankings.map(g => g[1]);
+  const advancers = [];
   for (let i = 0; i < firsts.length; i++) {
     advancers.push(firsts[i]);
     advancers.push(seconds[(i + 1) % seconds.length]);
@@ -618,11 +632,100 @@ async function _migrateSeeding(tournamentId, allTeams, allFixtures, knockoutFx) 
   if (advancers.some(a => !a?.teamId)) { Logger.error('Migration: missing teamId'); return; }
 
   const firstKoRound = Math.min(...knockoutFx.map(f => f.round));
-  const firstRoundFx = knockoutFx.filter(f => f.round === firstKoRound).sort((a, b) => a.match_number - b.match_number);
+  const firstRoundFx = knockoutFx
+    .filter(f => f.round === firstKoRound)
+    .sort((a, b) => a.match_number - b.match_number);
+
   for (let i = 0; i < firstRoundFx.length; i++) {
     await pb.collection('fixtures').update(firstRoundFx[i].id, {
       home_team: advancers[i * 2].teamId,
       away_team: advancers[i * 2 + 1].teamId,
     });
   }
+}
+/**
+ * migrateHistoricalStats()
+ *
+ * Backfills master_team links and team_stats for tournaments created before
+ * the gender/age_group system was in place. Safe to run on every boot —
+ * skips anything already correct.
+ *
+ * Handles:
+ *  - Teams with master_team = null  → creates/links a master record
+ *  - Completed tournaments with no team_stats rows → writes them now
+ */
+async function migrateHistoricalStats() {
+  Logger.info('migrateHistoricalStats: starting');
+
+  let tournaments;
+  try {
+    tournaments = await pb.collection('tournaments').getFullList({
+      sort: 'created', requestKey: null,
+    });
+  } catch (e) {
+    Logger.error('migrateHistoricalStats: failed to fetch tournaments', { error: e.message });
+    return;
+  }
+
+  for (const t of tournaments) {
+    try {
+      await _migrateOneTournamentStats(t);
+    } catch (e) {
+      Logger.warn('migrateHistoricalStats: skipped', { name: t.name, error: e.message });
+    }
+  }
+
+  Logger.info('migrateHistoricalStats: done');
+}
+
+async function _migrateOneTournamentStats(tournament) {
+  const teams = await pb.collection('teams').getFullList({
+    filter    : `tournament="${tournament.id}"`,
+    sort      : 'seed',
+    expand    : 'master_team',
+    requestKey: null,
+  });
+
+// Old records have no gender/age_group — they get null for both,
+// which groups them under "Uncategorised" in stats rather than
+// mixing them into a real age/gender category.
+  for (const team of teams) {
+    if (team.master_team) continue;
+
+    const masterId = await DB.getOrCreateMasterTeam(team.name, null, null);
+    await pb.collection('teams').update(team.id, { master_team: masterId });
+    Logger.info('migrateHistoricalStats: linked team', {
+      tournament: tournament.name,
+      team      : team.name,
+      masterId,
+    });
+  }
+
+  // Step 2 — if completed but no team_stats rows exist, write them now.
+  if (tournament.status !== 'completed') return;
+
+  const existingStats = await pb.collection('team_stats').getFullList({
+    filter    : `tournament="${tournament.id}"`,
+    requestKey: null,
+  });
+  if (existingStats.length > 0) return;
+
+  Logger.info('migrateHistoricalStats: backfilling stats', { name: tournament.name });
+
+  // Re-fetch teams so the master_team links we just wrote are included
+  const updatedTeams = await pb.collection('teams').getFullList({
+    filter    : `tournament="${tournament.id}"`,
+    sort      : 'seed',
+    expand    : 'master_team',
+    requestKey: null,
+  });
+
+  const fixtures = await pb.collection('fixtures').getFullList({
+    filter    : `tournament="${tournament.id}"`,
+    sort      : 'round,match_number',
+    expand    : 'home_team,away_team,winner',
+    requestKey: null,
+  });
+
+  await DB.saveTeamStats(tournament.id, fixtures, updatedTeams);
 }

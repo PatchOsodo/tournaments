@@ -38,7 +38,7 @@ const FORMATS = [
 
 function suggestFormat(n) {
   if (n <= 5)                return 'round_robin';
-  if ([4,8,16].includes(n)) return 'elimination';
+  if ([12,16,20].includes(n)) return 'elimination';
   return 'group_stage';
 }
 

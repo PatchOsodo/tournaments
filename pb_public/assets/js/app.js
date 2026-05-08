@@ -31,6 +31,7 @@ const App = {
 
     App._initSetupScreen();
     await migrateExistingTournaments();
+    await migrateHistoricalStats();
     await App.loadTournaments();
   },
 
@@ -178,12 +179,19 @@ const App = {
                    onclick="App.toggleFavourite('${t.id}',null)">☆</button>`;
     })() : '';
 
+    // Resume, for pending state Tournaments
+    const resumeBtn = Auth.isAdmin() && t.status === 'pending' ? `
+      <button class="btn sm ghost" onclick="App.resumeSetup('${t.id}')">
+        ✎ Resume setup
+      </button>` : '';
+    
     // Delete only for super admins
     const deleteBtn = Auth.isSuperAdmin() ? `
       <button class="btn sm danger"
               onclick="App.deleteTournament('${t.id}','${escHtml(t.name).replace(/'/g, "\\'")}')">
         Delete
       </button>` : '';
+      
 
     return `
       <div style="
@@ -205,6 +213,7 @@ const App = {
         </div>
         <div style="display:flex;gap:6px;align-items:center;flex-wrap:wrap;">
           <span class="status-badge badge-${t.status}">${t.status}</span>
+          ${resumeBtn}
           <button class="btn sm primary" onclick="App.openTournament('${t.id}')">Open</button>
           <a class="btn sm ghost" href="bracket.html?id=${t.id}" target="_blank">Bracket</a>
           ${deleteBtn}
@@ -306,91 +315,123 @@ const App = {
   /* ── 11c. SETUP SCREEN ───────────────────────────────────────────────── */
 
   goToSetup() {
-    State.setupData = { teamCount: 8, format: 'elimination', name: '', eventName: '', names: [], masterRefs: [] };
-    const tc = document.getElementById('team-count');
-    const tn = document.getElementById('tournament-name');
-    const en = document.getElementById('event-name');
-    if (tc) tc.value = 8;
-    if (tn) tn.value = '';
-    if (en) { en.value = ''; App._updateSetupLabels(''); }
-    App._renderFormatGrid();
-    App._populateEventSuggestions();
-    UI.showScreen('screen-setup');
-  },
+      State.setupData = {
+        teamCount: 8, format: 'group_stage',
+        eventName: null, eventSeries: null, eventEdition: null,
+        name: '', gender: null, ageGroup: null,
+        names: [], masterRefs: [],
+      };
+
+      const el = id => document.getElementById(id);
+      if (el('event-series'))             el('event-series').value           = '';
+      if (el('event-edition'))            el('event-edition').value          = '';
+      if (el('team-count'))               el('team-count').value             = 8;
+      if (el('setup-gender'))             el('setup-gender').value           = '';
+      if (el('setup-age-group'))          el('setup-age-group').value        = '';
+      if (el('tournament-name-preview'))  el('tournament-name-preview').textContent = '';
+      if (el('category-preview'))         el('category-preview').textContent = '';
+      if (el('event-series'))  { el('event-series').readOnly  = false; el('event-series').style.opacity  = ''; el('event-series').style.background  = ''; }
+      if (el('event-edition')) { el('event-edition').readOnly = false; el('event-edition').style.opacity = ''; el('event-edition').style.background = ''; }
+
+      App._renderFormatGrid();
+      App._populateEventSuggestions();
+      UI.showScreen('screen-setup');
+    },
 
   goToSetupForEvent(eventName) {
-    Logger.info('goToSetupForEvent', { eventName });
-    State.setupData = { teamCount: 8, format: 'elimination', name: '', eventName, names: [], masterRefs: [] };
-    const tc = document.getElementById('team-count');
-    const tn = document.getElementById('tournament-name');
-    const en = document.getElementById('event-name');
-    if (tc) tc.value = 8;
-    if (tn) tn.value = '';
-    if (en) { en.value = eventName; App._updateSetupLabels(eventName); }
-    App._renderFormatGrid();
-    App._populateEventSuggestions();
-    UI.showScreen('screen-setup');
-  },
+      Logger.info('goToSetupForEvent', { eventName });
+
+      const match   = eventName.match(/^(.+?)\s+([\d][^\s]*)$/);
+      const series  = match ? match[1].trim() : eventName;
+      const edition = match ? match[2].trim() : '';
+
+      State.setupData = {
+        teamCount: 8, format: 'group_stage',
+        eventName, eventSeries: series, eventEdition: edition || null,
+        name: '', gender: null, ageGroup: null,
+        names: [], masterRefs: [],
+      };
+
+      const el = id => document.getElementById(id);
+
+      // Pre-fill and lock the series field — user is adding to an existing event
+      const seriesEl = el('event-series');
+      if (seriesEl) {
+        seriesEl.value    = series;
+        seriesEl.readOnly = true;
+        seriesEl.style.opacity    = '0.7';
+        seriesEl.style.background = 'var(--bg-tertiary)';
+        seriesEl.title    = `Part of "${eventName}" — series locked`;
+      }
+
+      const editionEl = el('event-edition');
+      if (editionEl) {
+        editionEl.value    = edition;
+        editionEl.readOnly = false;   // edition can still be changed (new edition same series)
+        editionEl.style.opacity    = '';
+        editionEl.style.background = '';
+      }
+
+      if (el('team-count'))    el('team-count').value    = 8;
+      if (el('setup-gender'))     el('setup-gender').value     = '';
+      if (el('setup-age-group'))  el('setup-age-group').value  = '';
+
+      if (el('tournament-name-preview'))
+        el('tournament-name-preview').textContent = `Adding category to: "${eventName}"`;
+      if (el('category-preview'))
+        el('category-preview').textContent = '';
+
+      App._renderFormatGrid();
+      App._populateEventSuggestions();
+      UI.showScreen('screen-setup');
+    },
 
   _initSetupScreen() {
-    if (!document.getElementById('event-name')) {
-      const tnInput = document.getElementById('tournament-name');
-      if (tnInput) {
-        tnInput.insertAdjacentHTML('afterend', `
-          <div id="event-name-group" style="margin-bottom:1rem;margin-top:-0.5rem;">
-            <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:6px;">
-              Event name
-              <span style="font-size:11px;color:var(--text-tertiary);font-style:italic;">
-                — optional, groups categories together (e.g. "JBB 2025")
-              </span>
-            </label>
-            <input type="text" id="event-name" class="tournament-name-input"
-                   placeholder="e.g. JBB 2025, City Cup, School League"
-                   maxlength="60" list="event-name-suggestions" style="margin-bottom:0;" />
-            <datalist id="event-name-suggestions"></datalist>
-          </div>`);
-      }
-    }
+      App._renderFormatGrid();
 
-    const tnLabel = document.querySelector('label[for="tournament-name"]');
-    if (tnLabel) tnLabel.textContent = 'Tournament / Category name';
+      const updatePreview = () => {
+        const series  = (document.getElementById('event-series')?.value  || '').trim();
+        const edition = (document.getElementById('event-edition')?.value || '').trim();
+        const full    = [series, edition].filter(Boolean).join(' ');
+        const preview = document.getElementById('tournament-name-preview');
+        if (preview) preview.textContent = full ? `Saving as: "${full}"` : '';
+        State.setupData.eventSeries  = series  || null;
+        State.setupData.eventEdition = edition || null;
+        State.setupData.eventName    = full    || null;
+      };
 
-    App._renderFormatGrid();
+      document.getElementById('event-series')?.addEventListener('input', updatePreview);
+      document.getElementById('event-edition')?.addEventListener('input', updatePreview);
 
-    document.getElementById('team-count')?.addEventListener('input', function () {
-      const n = parseInt(this.value, 10);
-      UI.clearError('setup-error');
-      this.classList.remove('input-error');
-      if (!isNaN(n) && n >= 3 && n <= 32) {
-        State.setupData.teamCount = n;
-        State.setupData.format    = suggestFormat(n);
-        App._renderFormatGrid();
-      }
-    });
+      document.getElementById('team-count')?.addEventListener('input', function () {
+        const n = parseInt(this.value, 10);
+        UI.clearError('setup-error');
+        this.classList.remove('input-error');
+        if (!isNaN(n) && n >= 3 && n <= 32) {
+          State.setupData.teamCount = n;
+          State.setupData.format    = suggestFormat(n);
+          App._renderFormatGrid();
+        }
+      });
+    },
 
-    document.getElementById('event-name')?.addEventListener('input', function () {
-      State.setupData.eventName = this.value.trim();
-      App._updateSetupLabels(this.value.trim());
-    });
-  },
-
-  _updateSetupLabels(eventName) {
-    const tnLabel = document.querySelector('label[for="tournament-name"]');
-    if (tnLabel) {
-      tnLabel.textContent = eventName ? 'Category name' : 'Tournament / Category name';
-    }
-  },
-
+  
   async _populateEventSuggestions() {
-    const datalist = document.getElementById('event-name-suggestions');
-    if (!datalist) return;
-    try {
-      const events = await DB.getEvents();
-      datalist.innerHTML = events.map(e => `<option value="${escHtml(e)}">`).join('');
-    } catch (e) {
-      Logger.warn('_populateEventSuggestions failed', { error: e.message });
-    }
-  },
+      const datalist = document.getElementById('event-series-suggestions');
+      if (!datalist) return;
+      try {
+        const all = await pb.collection('tournaments').getFullList({
+          fields: 'event_series,event_name', requestKey: null,
+        });
+        const series = [...new Set(
+          all.map(t => t.event_series || t.event_name?.match(/^(.+?)\s+[\d]/)?.[1] || t.event_name)
+             .filter(Boolean)
+        )].sort();
+        datalist.innerHTML = series.map(s => `<option value="${escHtml(s)}">`).join('');
+      } catch (e) {
+        Logger.warn('_populateEventSuggestions failed', { error: e.message });
+      }
+    },
 
   _renderFormatGrid() {
     const el = document.getElementById('format-grid');
@@ -424,44 +465,90 @@ const App = {
     State.setupData.format = id;
     App._renderFormatGrid();
   },
+ 
+   /* ── 11c.1 CATEGORY SELECTOR ON SETUP SCREEN ───────────────────────────────────────────────── */
 
-  /* ── 11d. NAMES SCREEN ───────────────────────────────────────────────── */
+    onCategoryChange() {
+      State.setupData.gender   = document.getElementById('setup-gender')?.value   || null;
+      State.setupData.ageGroup = document.getElementById('setup-age-group')?.value || null;
+      
+      const preview = document.getElementById('category-preview');
+      if (preview) {
+        const parts = [State.setupData.ageGroup, State.setupData.gender].filter(Boolean);
+        preview.textContent = parts.length ? `Category: ${parts.join(' ')}` : '';
+      }
+      
+      Logger.debug('Category changed', {
+        gender  : State.setupData.gender,
+        ageGroup: State.setupData.ageGroup,
+      });
+    },
 
-  async goToNames() {
-    UI.clearError('setup-error');
+  /* ── 11c.2 RESUME SETUP SCREEN ───────────────────────────────────────────────── */
 
-    const nameVal  = (document.getElementById('tournament-name')?.value || '').trim();
-    const eventVal = (document.getElementById('event-name')?.value     || '').trim();
-    const raw      = document.getElementById('team-count')?.value.trim();
-    const n        = parseInt(raw, 10);
+async resumeSetup(tournamentId) {
+  Logger.info('App.resumeSetup', { tournamentId });
 
-    if (!nameVal) {
-      UI.showError('setup-error', 'setup-error-msg',
-        `Please enter a ${eventVal ? 'category' : 'tournament'} name.`);
+  const btn = event?.target;
+  if (btn) { btn.disabled = true; btn.textContent = 'Loading…'; }
+
+  try {
+    const [tournament, existingTeams, existingFixtures] = await Promise.all([
+      pb.collection('tournaments').getOne(tournamentId),
+      DB.getTeams(tournamentId),
+      DB.getFixtures(tournamentId),
+    ]);
+
+    // If fixtures already exist, just open normally — nothing to resume
+    if (existingFixtures.length > 0) {
+      State.activeTournament = tournament;
+      State.teams            = existingTeams;
+      State.fixtures         = existingFixtures;
+      App._renderFixturesScreen();
+      UI.showScreen('screen-fixtures');
       return;
     }
-    if (!raw || isNaN(n) || n < 3 || n > 32) {
-      UI.showError('setup-error', 'setup-error-msg', 'Enter a number of teams between 3 and 32.');
-      document.getElementById('team-count')?.classList.add('input-error');
-      return;
+
+    // Delete any partially-saved teams so generateFixtures
+    // creates them fresh with correct seeds, group assignments,
+    // and master_team links derived from the names the user enters
+    for (const t of existingTeams) {
+      await pb.collection('teams').delete(t.id);
+    }
+    if (existingTeams.length) {
+      Logger.info('resumeSetup: cleared stale teams', { count: existingTeams.length });
     }
 
-    State.setupData.name      = nameVal;
-    State.setupData.eventName = eventVal;
-    State.setupData.teamCount = n;
+    // Restore setupData from the tournament record so generateFixtures
+    // knows to PATCH this tournament rather than create a new one
+    const firstMaster = existingTeams.find(t => t.expand?.master_team)?.expand?.master_team;
+    const gender      = firstMaster?.gender    || null;
+    const ageGroup    = firstMaster?.age_group || null;
 
-    // Load master teams for autocomplete in name inputs
+    State.setupData = {
+      tournamentId : tournament.id,
+      name         : tournament.name,
+      eventName    : tournament.event_name || '',
+      format       : tournament.format,
+      teamCount    : existingTeams.length || 8,
+      names        : existingTeams.map(t => t.name),
+      masterRefs   : [],
+      gender,
+      ageGroup,
+    };
+
+    // Load master teams for autocomplete
     try {
       State.masterTeams = await DB.getMasterTeams();
-      Logger.info('Master teams loaded for autocomplete', { count: State.masterTeams.length });
     } catch (e) {
       State.masterTeams = [];
-      Logger.warn('Could not load master teams', { error: e.message });
     }
 
+    // Build the names screen — identical to goToNames() but
+    // pre-filled from the tournament's existing (now deleted) teams
+    const n    = State.setupData.teamCount;
     const grid = document.getElementById('team-inputs');
     if (grid) {
-      // Build datalist of existing master team names for autocomplete
       const datalist = `<datalist id="master-team-suggestions">
         ${State.masterTeams.map(t => `<option value="${escHtml(t.name)}">`).join('')}
       </datalist>`;
@@ -480,7 +567,79 @@ const App = {
     }
 
     UI.showScreen('screen-names');
-  },
+    Logger.info('resumeSetup: names screen ready', {
+      tournament : tournament.name,
+      prefilled  : existingTeams.length,
+    });
+
+  } catch (e) {
+    Logger.error('resumeSetup failed', { error: e.message });
+    UI.showError('home-error', 'home-error-msg', `Resume failed: ${e.message}`);
+  } finally {
+    if (btn) { btn.disabled = false; btn.textContent = '✎ Resume'; }
+  }
+},
+
+  /* ── 11d. NAMES SCREEN ───────────────────────────────────────────────── */
+
+  async goToNames() {
+      UI.clearError('setup-error');
+
+      const series  = (document.getElementById('event-series')?.value  || '').trim();
+      const edition = (document.getElementById('event-edition')?.value || '').trim();
+      const raw     = document.getElementById('team-count')?.value.trim();
+      const n       = parseInt(raw, 10);
+
+      if (!series) {
+        UI.showError('setup-error', 'setup-error-msg', 'Please enter a tournament name.');
+        document.getElementById('event-series')?.focus();
+        return;
+      }
+      if (!raw || isNaN(n) || n < 3 || n > 32) {
+        UI.showError('setup-error', 'setup-error-msg', 'Enter a number of teams between 3 and 32.');
+        document.getElementById('team-count')?.classList.add('input-error');
+        return;
+      }
+
+      const ag           = State.setupData.ageGroup || '';
+      const gender       = State.setupData.gender   || '';
+      const categoryName = [ag, gender].filter(Boolean).join(' ') || 'Open';
+
+      State.setupData.name         = categoryName;
+      State.setupData.eventName    = [series, edition].filter(Boolean).join(' ');
+      State.setupData.eventSeries  = series  || null;
+      State.setupData.eventEdition = edition || null;
+      State.setupData.teamCount    = n;
+
+      // Load master teams for autocomplete
+      try {
+        State.masterTeams = await DB.getMasterTeams();
+        Logger.info('Master teams loaded for autocomplete', { count: State.masterTeams.length });
+      } catch (e) {
+        State.masterTeams = [];
+        Logger.warn('Could not load master teams', { error: e.message });
+      }
+
+      const grid = document.getElementById('team-inputs');
+      if (grid) {
+        const datalist = `<datalist id="master-team-suggestions">
+          ${State.masterTeams.map(t => `<option value="${escHtml(t.name)}">`).join('')}
+        </datalist>`;
+        grid.innerHTML = datalist + Array.from({ length: n }, (_, i) => `
+          <div class="team-input-wrap">
+            <span class="team-num">${i + 1}</span>
+            <input type="text"
+                   placeholder="Team ${i + 1}"
+                   id="tn-${i}"
+                   value="${escHtml(State.setupData.names[i] || '')}"
+                   maxlength="30"
+                   list="master-team-suggestions"
+                   autocomplete="off" />
+          </div>`).join('');
+      }
+
+      UI.showScreen('screen-names');
+    },
 
   /* ── 11e. FIXTURE GENERATION & PERSISTENCE ───────────────────────────── */
 
@@ -509,25 +668,31 @@ const App = {
     if (btn) { btn.disabled = true; btn.innerHTML = '<span class="spinner"></span> Saving...'; }
 
     try {
-      const tournament = await DB.createTournament(
-        State.setupData.name,
-        State.setupData.format,
-        State.setupData.eventName || null,
-      );
-      Logger.info('Tournament created', { id: tournament.id });
+        const isResume   = !!State.setupData.tournamentId;
+        const tournament = isResume
+          ? await pb.collection('tournaments').getOne(State.setupData.tournamentId)
+          : await DB.createTournament(
+              State.setupData.name,
+              State.setupData.format,
+              State.setupData.eventName    || null,
+              State.setupData.eventSeries  || null,
+              State.setupData.eventEdition || null,
+            );
+        Logger.info(isResume ? 'Tournament resumed' : 'Tournament created', { id: tournament.id });
 
-      const teamMap   = {};
-      const numGroups = State.setupData.format === 'group_stage'
+    const teamMap   = {};
+    const numGroups = State.setupData.format === 'group_stage'
         ? (names.length <= 8 ? 2 : names.length <= 12 ? 3 : 4) : null;
 
       // Determine category for master team linking
-      const category = State.setupData.eventName || State.setupData.name;
+    const gender   = State.setupData.gender   || null;
+    const ageGroup = State.setupData.ageGroup || null;
 
       for (let i = 0; i < names.length; i++) {
         const groupName = numGroups ? 'ABCDEFGH'[i % numGroups] : null;
 
         // Get or create master team record — links returning teams automatically
-        const masterTeamId = await DB.getOrCreateMasterTeam(names[i], category);
+        const masterTeamId = await DB.getOrCreateMasterTeam(names[i],  gender, ageGroup);
 
         const team = await DB.createTeam(
           tournament.id, names[i], i + 1, groupName, masterTeamId
@@ -669,17 +834,17 @@ const App = {
     const t  = State.activeTournament;
     const fx = State.fixtures;
 
-    const eventBadge = t.event_name
-      ? `<span style="font-size:11px;color:var(--text-tertiary);background:var(--bg-secondary);
-                      border-radius:4px;padding:2px 7px;border:0.5px solid var(--border-light);">
-           🏆 ${escHtml(t.event_name)}
+    // Replace the title/meta lines:
+    const categoryBadge = t.name && t.name !== 'Open'
+      ? `<span style="font-size:11px;color:var(--accent);background:var(--bg-success);
+                      border-radius:4px;padding:2px 7px;border:0.5px solid var(--accent);
+                      opacity:0.8;">
+           ${escHtml(t.name)}
          </span>`
       : '';
 
-    document.getElementById('sched-title').textContent = t.name;
-    document.getElementById('sched-meta').innerHTML    =
-      `${State.teams.length} teams · ${t.format.replace(/_/g, ' ')} ${eventBadge}`;
-    UI.setStatusBadge(t.status);
+    document.getElementById('sched-title').textContent = t.event_name || t.name;
+    document.getElementById('sched-meta').innerHTML =`${State.teams.length} teams · ${t.format.replace(/_/g, ' ')} ${categoryBadge}`;
 
     const realFx = fx.filter(f => !f.is_bye);
     const done   = realFx.filter(f => f.status === 'completed').length;

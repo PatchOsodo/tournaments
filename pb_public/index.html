@@ -77,14 +77,61 @@
     <p class="section-label">New tournament</p>
     <div class="card">
 
-      <label for="tournament-name"
-             style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:6px;">
-        Tournament / Category name
+      
+      <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:6px;">
+        Tournament Details
       </label>
-      <input type="text" id="tournament-name" class="tournament-name-input"
-             placeholder="e.g. U16 Boys" maxlength="60" />
-
+      <div style="display:grid;grid-template-columns:1fr auto;gap:8px;margin-bottom:0.5rem;">
+        <input type="text" id="event-series" class="tournament-name-input"
+               placeholder="Name e.g. Junior Ballers Bash"
+               maxlength="40" style="margin-bottom:0;"
+               list="event-series-suggestions" autocomplete="off" />
+        <datalist id="event-series-suggestions"></datalist>
+        <input type="text" id="event-edition" class="tournament-name-input"
+               placeholder="Edition e.g 6.0"
+               maxlength="20" style="margin-bottom:0;width:150px;" />
+      </div>
+      <div id="tournament-name-preview"
+           style="font-size:11px;color:var(--text-tertiary);margin-bottom:1rem;min-height:16px;">
+      </div>
+      
       <!-- Event-name field injected here by App._initSetupScreen() -->
+
+      <!-- Category selectors — shown when an event name is entered -->
+      <div id="category-selectors" style="margin-bottom:1rem;">
+        <label style="font-size:13px;color:var(--text-secondary);display:block;margin-bottom:6px;">
+          Category
+          <span style="font-size:11px;color:var(--text-tertiary);font-style:italic;">
+            — age group and gender for this tournament
+          </span>
+        </label>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;">
+          <select id="setup-age-group" class="tournament-name-input"
+                  onchange="App.onCategoryChange()" style="margin-bottom:0;cursor:pointer;">
+            <option value="">Age group</option>
+            <option value="U10">U10</option>
+            <option value="U12">U12</option>
+            <option value="U13">U13</option>
+            <option value="U14">U14</option>
+            <option value="U16">U16</option>
+            <option value="U19">U19</option>
+            <option value="Senior">Senior</option>
+            <option value="Open">Open</option>
+          </select>
+          <select id="setup-gender" class="tournament-name-input"
+                  onchange="App.onCategoryChange()" style="margin-bottom:0;cursor:pointer;">
+            <option value="">Gender</option>
+            <option value="Boys">Boys</option>
+            <option value="Girls">Girls</option>
+            <option value="Mixed">Mixed</option>
+            <option value="Men">Men</option>
+            <option value="Women">Women</option>
+          </select>
+        </div>
+        <div id="category-preview" style="
+          font-size:11px;color:var(--text-tertiary);margin-top:6px;min-height:16px;">
+        </div>
+      </div>
 
       <div class="team-count-row">
         <label for="team-count">Number of teams</label>

@@ -30,8 +30,8 @@ const App = {
     }
 
     App._initSetupScreen();
-    await migrateExistingTournaments();
-    await migrateHistoricalStats();
+    /*await migrateExistingTournaments();
+    await migrateHistoricalStats();*/
     await App.loadTournaments();
   },
 
@@ -311,6 +311,7 @@ const App = {
     UI.showScreen('screen-home');
     App.loadTournaments();
   },
+  
 
   /* ── 11c. SETUP SCREEN ───────────────────────────────────────────────── */
 

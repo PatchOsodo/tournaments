@@ -134,9 +134,15 @@ const BracketPage = {
          bot half (Mceil(N/2)+1..N) → right columns, depth=ri (ri=0 outermost)
        Final always in centre column.
    ═══════════════════════════════════════════════════════════════════════════ */
+  // ═══════════════════════════════════════════════════════════════════════════
+  // REPLACE the entire _buildMirroredBracket method with this block.
+  // Everything from   _buildMirroredBracket(allFixtures) {
+  //             to the closing  },
+  // ═══════════════════════════════════════════════════════════════════════════
+
   _buildMirroredBracket(allFixtures) {
 
-    // Keep only real (non-bye) bracket matches
+    // ── Filter and group fixtures ────────────────────────────────────────────
     const fx = allFixtures
       .filter(f => !f.is_bye && !f.group_name)
       .sort((a, b) => a.round !== b.round ? a.round - b.round : a.match_number - b.match_number);
@@ -153,55 +159,71 @@ const BracketPage = {
 
     const finalRoundNum  = roundNums[roundNums.length - 1];
     const nonFinalRounds = roundNums.slice(0, -1);
-    const numSide        = nonFinalRounds.length;
-    const totalCols      = numSide + 1 + numSide;   // left + final + right
+    const numSide        = nonFinalRounds.length;   // columns on each side of Final
+    const totalCols      = numSide + 1 + numSide;
     const finalColIdx    = numSide;
 
     // ── Layout constants ─────────────────────────────────────────────────────
-    const CARD_W       = 180;
-    const CARD_H       = 72;
-    const ROW_PAD      = 16;   // min gap between cards in same column
-    const COL_GAP      = 48;
-    const LABEL_H      = 28;
-    const MARGIN_X     = 20;
-    const MARGIN_Y     = 52;
-    const baseSpacing  = CARD_H + ROW_PAD;  // slot height at depth 0
+    const CARD_W        = 180;
+    const CARD_H        = 72;
+    const ROW_PAD       = 16;
+    const COL_GAP       = 48;
+    const LABEL_H       = 28;
+    const MARGIN_X      = 20;
+    const MARGIN_Y      = 20;
+    const TROPHY_H      = 44;   // space reserved above Final for trophy
+    const GAP_BELOW_FINAL = 72; // vertical gap from bottom of Final card to SF centre
+
+    const baseSpacing = CARD_H + ROW_PAD;   // 88 — base slot height
 
     // X left-edge of column ci
     const colX = ci => MARGIN_X + ci * (CARD_W + COL_GAP);
 
-    // ── Y centring formula (BUG FIX v4.2.0) ──────────────────────────────────
-    // slot at depth d = baseSpacing × 2^d
-    // card top-edge at (depth d, index i) = startY + i×slot + slot/2 - CARD_H/2
-    // This places the card centre at: startY + (i + 0.5) × slot
-    // Parent at depth d+1, index j = floor(i/2):
-    //   centre = startY + (j + 0.5) × slot_{d+1}
-    //          = startY + (j + 0.5) × 2 × slot_d
-    // which equals the midpoint of children j*2 and j*2+1 centres. ✓
-    const startY = MARGIN_Y + LABEL_H;
-    const yTopEdge = (depth, index) => {
-      const slot = baseSpacing * Math.pow(2, depth);
-      return startY + index * slot + slot / 2 - CARD_H / 2;
+    // ── Y positioning — shared-centre top-down tree ──────────────────────────
+    //
+    // Layout:
+    //   Final sits at the top (just below trophy).
+    //   All side rounds share a common vertical centre point (sfCentre) that
+    //   sits GAP_BELOW_FINAL below the bottom of the Final card.
+    //
+    //   depth 0 = the round directly feeding the Final (SF for 8-team)
+    //             → 1 card per side, centred on sfCentre
+    //   depth 1 = the round feeding depth-0 (QF for 8-team)
+    //             → 2 cards per side, spread symmetrically around sfCentre
+    //   depth d → 2^d cards per side, slot = baseSpacing × 2^d
+    //
+    //   Card top-edge at (depth d, index i within that side):
+    //     groupTop = sfCentre − (2^d / 2) × slot_d
+    //     y        = groupTop + i × slot_d + slot_d/2 − CARD_H/2
+    //
+    //   This guarantees every parent is exactly centred between its two children.
+
+    const startY    = MARGIN_Y + TROPHY_H + LABEL_H;   // below trophy and label row
+    const finalY    = startY;                           // Final card top-edge
+    const sfCentre  = finalY + CARD_H + GAP_BELOW_FINAL; // shared vertical axis
+
+    const yCard = (depth, index) => {
+      const count    = Math.pow(2, depth);
+      const slotH    = baseSpacing * Math.pow(2, depth);
+      const groupTop = sfCentre - (count / 2) * slotH;
+      return groupTop + index * slotH + slotH / 2 - CARD_H / 2;
     };
 
-    // Total height must reach the bottom of the deepest card.
-    // With top-down hierarchy, the outermost round has the largest depth value
-    // (numSide - 1) and the most cards, so it extends furthest down.
-    // Deepest card bottom = finalY + FINAL_TOP_OFFSET + yTopEdge(maxDepth, maxIndex) + CARD_H
-    const maxDepth     = numSide - 1;           // outermost round depth after inversion
-    const r1Count      = roundMap[roundNums[0]].length;
-    const halfCount    = Math.ceil(r1Count / 2); // cards on each side at outermost round
-    const deepestCardY = yTopEdge(maxDepth, halfCount - 1) + CARD_H;
-    const totalH       = deepestCardY + MARGIN_Y + 40;  // +40 bottom breathing room
-    const totalW  = MARGIN_X * 2 + totalCols * CARD_W + (totalCols - 1) * COL_GAP;
+    // Total SVG height: bottom of the deepest card (outermost round) + margin
+    const maxDepth  = numSide - 1;   // ri=0 feeds Final directly, ri=numSide-1 is outermost
+    // Outermost round: depth = numSide-1, has 2^(numSide-1) cards per side
+    const outerCount = Math.pow(2, maxDepth);
+    const bottomCardY = yCard(maxDepth, outerCount - 1) + CARD_H;
+    const totalH    = Math.max(bottomCardY, finalY + CARD_H) + 40;
+    const totalW    = MARGIN_X * 2 + totalCols * CARD_W + (totalCols - 1) * COL_GAP;
 
-    // ── SVG accumulator ───────────────────────────────────────────────────────
-    const svg = [];
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    const svg   = [];
     const green = '#1D9E75';
     const greenBg = '#E6F7F1';
 
-    const rid   = v => (typeof v === 'object' ? v?.id : v) ?? null;
-    const trunc = (s, n = 19) => s.length > n ? s.slice(0, n - 1) + '…' : s;
+    const rid    = v => (typeof v === 'object' ? v?.id : v) ?? null;
+    const trunc  = (s, n = 19) => s.length > n ? s.slice(0, n - 1) + '…' : s;
     const seedOf = id => {
       if (!id) return 0;
       return BracketPage.teams.findIndex(t => rid(t.id) === id) + 1;
@@ -219,234 +241,237 @@ const BracketPage = {
       const wA   = done && wId && wId === aId;
       const noTeams = !hId && !aId;
 
-      const border  = done ? green : 'var(--border-light,#ccc)';
-      const bw      = done ? 1.5 : 0.75;
-      const opacity = noTeams ? 0.38 : 1;
-      const rowH    = (CARD_H - 1) / 2;
-      const parts   = [];
+      const border = done ? green : 'var(--border-light,#555)';
+      const bw     = done ? 1.5 : 0.75;
+      const op     = noTeams ? 0.35 : 1;
+      const rowH   = (CARD_H - 1) / 2;
+      const parts  = [];
 
-      // Round label above first card only
       if (showLabel) {
-        parts.push(`<text x="${x + CARD_W / 2}" y="${y - 8}"
-          text-anchor="middle" font-size="9" font-weight="600"
-          letter-spacing="0.08em" fill="var(--text-tertiary,#999)"
-          font-family="inherit" text-decoration="none"
-          style="text-transform:uppercase">${escHtml(label)}</text>`);
+        parts.push(
+          `<text x="${x + CARD_W / 2}" y="${y - 8}"
+            text-anchor="middle" font-size="9" font-weight="600"
+            letter-spacing="0.08em" fill="var(--text-tertiary,#888)"
+            font-family="inherit" style="text-transform:uppercase">
+            ${escHtml(label)}
+          </text>`
+        );
       }
 
-      // Card background
-      parts.push(`<rect x="${x}" y="${y}" width="${CARD_W}" height="${CARD_H}"
-        rx="8" fill="var(--bg-primary,#fff)"
-        stroke="${border}" stroke-width="${bw}" opacity="${opacity}"/>`);
+      parts.push(
+        `<rect x="${x}" y="${y}" width="${CARD_W}" height="${CARD_H}"
+          rx="8" fill="var(--bg-primary,#2a2a2a)"
+          stroke="${border}" stroke-width="${bw}" opacity="${op}"/>`
+      );
 
-      // Home row highlight
-      if (wH) parts.push(`<rect x="${x+1}" y="${y+1}" width="${CARD_W-2}" height="${rowH-1}" rx="7" fill="${greenBg}"/>`);
-
-      // Home seed
+      // Home row
+      if (wH) parts.push(
+        `<rect x="${x+1}" y="${y+1}" width="${CARD_W-2}" height="${rowH-1}" rx="7" fill="${greenBg}"/>`
+      );
       const hs = seedOf(hId);
-      if (hs > 0) parts.push(`<text x="${x+10}" y="${y+rowH/2}"
-        dominant-baseline="central" text-anchor="middle"
-        font-size="9" fill="var(--text-tertiary,#bbb)" font-family="inherit">${hs}</text>`);
-
-      // Home name
-      parts.push(`<text x="${x+22}" y="${y+rowH/2}"
-        dominant-baseline="central" font-size="12"
-        font-weight="${wH ? '600' : '400'}"
-        fill="${wH ? green : !hId ? 'var(--text-tertiary,#bbb)' : 'var(--text-primary,#222)'}"
-        font-family="inherit"
-        style="${!hId ? 'font-style:italic' : ''}">${escHtml(trunc(hn))}</text>`);
-
-      // Home score
-      if (done) parts.push(`<text x="${x+CARD_W-8}" y="${y+rowH/2}"
-        dominant-baseline="central" text-anchor="end"
-        font-size="12" font-weight="700"
-        fill="${wH ? green : 'var(--text-tertiary,#aaa)'}"
-        font-family="inherit">${fixture.home_score ?? ''}</text>`);
+      if (hs > 0) parts.push(
+        `<text x="${x+11}" y="${y+rowH/2}" dominant-baseline="central"
+          text-anchor="middle" font-size="9"
+          fill="var(--text-tertiary,#888)" font-family="inherit">${hs}</text>`
+      );
+      parts.push(
+        `<text x="${x+22}" y="${y+rowH/2}" dominant-baseline="central"
+          font-size="12" font-weight="${wH ? '600' : '400'}"
+          fill="${wH ? green : !hId ? 'var(--text-tertiary,#888)' : 'var(--text-primary,#eee)'}"
+          font-family="inherit"
+          style="${!hId ? 'font-style:italic' : ''}">${escHtml(trunc(hn))}</text>`
+      );
+      if (done) parts.push(
+        `<text x="${x+CARD_W-8}" y="${y+rowH/2}" dominant-baseline="central"
+          text-anchor="end" font-size="12" font-weight="700"
+          fill="${wH ? green : 'var(--text-tertiary,#888)'}"
+          font-family="inherit">${fixture.home_score ?? ''}</text>`
+      );
 
       // Divider
-      parts.push(`<line x1="${x+1}" y1="${y+rowH}" x2="${x+CARD_W-1}" y2="${y+rowH}"
-        stroke="var(--border-light,#eee)" stroke-width="0.5"/>`);
+      parts.push(
+        `<line x1="${x+1}" y1="${y+rowH}" x2="${x+CARD_W-1}" y2="${y+rowH}"
+          stroke="var(--border-light,#444)" stroke-width="0.5"/>`
+      );
 
       // Away row
       const ay = y + rowH + 1;
-      if (wA) parts.push(`<rect x="${x+1}" y="${ay}" width="${CARD_W-2}" height="${rowH}" rx="7" fill="${greenBg}"/>`);
-
+      if (wA) parts.push(
+        `<rect x="${x+1}" y="${ay}" width="${CARD_W-2}" height="${rowH}" rx="7" fill="${greenBg}"/>`
+      );
       const as_ = seedOf(aId);
-      if (as_ > 0) parts.push(`<text x="${x+10}" y="${ay+rowH/2}"
-        dominant-baseline="central" text-anchor="middle"
-        font-size="9" fill="var(--text-tertiary,#bbb)" font-family="inherit">${as_}</text>`);
-
-      parts.push(`<text x="${x+22}" y="${ay+rowH/2}"
-        dominant-baseline="central" font-size="12"
-        font-weight="${wA ? '600' : '400'}"
-        fill="${wA ? green : !aId ? 'var(--text-tertiary,#bbb)' : 'var(--text-primary,#222)'}"
-        font-family="inherit"
-        style="${!aId ? 'font-style:italic' : ''}">${escHtml(trunc(an))}</text>`);
-
-      if (done) parts.push(`<text x="${x+CARD_W-8}" y="${ay+rowH/2}"
-        dominant-baseline="central" text-anchor="end"
-        font-size="12" font-weight="700"
-        fill="${wA ? green : 'var(--text-tertiary,#aaa)'}"
-        font-family="inherit">${fixture.away_score ?? ''}</text>`);
+      if (as_ > 0) parts.push(
+        `<text x="${x+11}" y="${ay+rowH/2}" dominant-baseline="central"
+          text-anchor="middle" font-size="9"
+          fill="var(--text-tertiary,#888)" font-family="inherit">${as_}</text>`
+      );
+      parts.push(
+        `<text x="${x+22}" y="${ay+rowH/2}" dominant-baseline="central"
+          font-size="12" font-weight="${wA ? '600' : '400'}"
+          fill="${wA ? green : !aId ? 'var(--text-tertiary,#888)' : 'var(--text-primary,#eee)'}"
+          font-family="inherit"
+          style="${!aId ? 'font-style:italic' : ''}">${escHtml(trunc(an))}</text>`
+      );
+      if (done) parts.push(
+        `<text x="${x+CARD_W-8}" y="${ay+rowH/2}" dominant-baseline="central"
+          text-anchor="end" font-size="12" font-weight="700"
+          fill="${wA ? green : 'var(--text-tertiary,#888)'}"
+          font-family="inherit">${fixture.away_score ?? ''}</text>`
+      );
 
       svg.push(parts.join(''));
     };
 
-    // ── Draw connector elbow ─────────────────────────────────────────────────
-    // L-shape: from (x1,y1) horizontal to midX, vertical to y2, horizontal to (x2,y2)
+    // ── Connector: L-shaped elbow between two card midpoints ─────────────────
     const drawConn = (x1, y1, x2, y2) => {
       const midX = (x1 + x2) / 2;
-      svg.push(`<path d="M${x1},${y1} H${midX} V${y2} H${x2}"
-        fill="none" stroke="var(--border-mid,#ccc)" stroke-width="0.9" opacity="0.5"/>`);
+      svg.push(
+        `<path d="M${x1},${y1} H${midX} V${y2} H${x2}"
+          fill="none" stroke="var(--border-mid,#555)"
+          stroke-width="1" opacity="0.6"/>`
+      );
     };
 
-    // ── Final (centre column) ─────────────────────────────────────────────────
-    const finalX = colX(finalColIdx);
-    const finalMatches = roundMap[finalRoundNum];
-    // Centre vertically in the SVG
-    // Final is always pinned at the top (just below trophy + label).
-    // All other rounds cascade downward from it.
-    const TROPHY_H         = 40;   // space for trophy icon above Final card
-    const FINAL_TOP_OFFSET = TROPHY_H + 16;   // trophy + breathing room
-    const finalY           = startY + FINAL_TOP_OFFSET;
-    
-    // Trophy icon above the Final card
-    const trophyY = finalY - TROPHY_H + 4;
-    svg.push(`<text x="${finalX + CARD_W / 2}" y="${trophyY}"
-      text-anchor="middle" font-size="22" font-family="Segoe UI Emoji,Apple Color Emoji,sans-serif"
-      dominant-baseline="auto">🏆</text>`);
+    // ── Trophy above Final ────────────────────────────────────────────────────
+    const trophyX = colX(finalColIdx) + CARD_W / 2;
+    const trophyY = startY - TROPHY_H + 4;
+    svg.push(
+      `<use href="#icon-trophy"
+        x="${trophyX - 12}" y="${trophyY}"
+        width="24" height="24"
+        stroke="${green}" fill="none"/>`
+    );
 
+    // ── Final card ────────────────────────────────────────────────────────────
+    const finalMatches = roundMap[finalRoundNum];
     finalMatches.forEach((m, mi) => {
-      drawCard(finalX, finalY + mi * (CARD_H + ROW_PAD), m, 'Final', mi === 0);
+      drawCard(colX(finalColIdx), finalY + mi * (CARD_H + ROW_PAD), m, 'Final', mi === 0);
     });
 
     // ── Left side: top half of each non-final round ───────────────────────────
-    // In a top-down hierarchy, rounds further from the Final (higher depth)
-    // are positioned lower. depth 0 = directly feeds Final (innermost side round).
-    // depth increases as we go further from the Final toward outermost round.
-    // We invert: depth = numSide - 1 - ri  so outermost gets largest depth (lowest Y).
+    // ri=0 is the round directly feeding the Final (innermost, depth=0)
+    // ri=numSide-1 is the outermost round (depth=numSide-1)
     nonFinalRounds.forEach((roundNum, ri) => {
-      const depth    = numSide - 1 - ri;   // outermost round = largest depth = lowest Y
-      const colIdx   = ri;
-      const x        = colX(colIdx);
-      const allM     = roundMap[roundNum];
-      const half     = Math.ceil(allM.length / 2);
-      const topHalf  = allM.slice(0, half);
-      const label    = allM[0]?.round_label || `Round ${roundNum}`;
+      const depth   = ri;               // 0 = innermost (SF), increases outward
+      const colIdx  = numSide - 1 - ri; // innermost is closest to Final col
+      const x       = colX(colIdx);
+      const allM    = roundMap[roundNum];
+      const half    = Math.ceil(allM.length / 2);
+      const topHalf = allM.slice(0, half);
+      const label   = allM[0]?.round_label || `Round ${roundNum}`;
 
       topHalf.forEach((m, mi) => {
-        const y = yTopEdge(depth, mi);
+        const y = yCard(depth, mi);
         drawCard(x, y, m, label, mi === 0);
 
         // Connector to parent (next column toward Final)
-        const isLastSide     = ri === nonFinalRounds.length - 1;
-        const parentColIdx   = colIdx + 1;
-        const parentX        = colX(parentColIdx) ;
+        const parentColIdx = colIdx + 1;
+        const parentX      = colX(parentColIdx);
         let   parentY;
 
-        if (isLastSide) {
+        if (ri === 0) {
+          // Direct feed to Final
           parentY = finalY + CARD_H / 2;
         } else {
-          // depth decreases toward Final (depth-1 is closer to Final)
-          parentY = yTopEdge(depth - 1, Math.floor(mi / 2)) + CARD_H / 2;
+          // Parent is the previous ri (depth-1), index floor(mi/2)
+          parentY = yCard(depth - 1, Math.floor(mi / 2)) + CARD_H / 2;
         }
 
         drawConn(x + CARD_W, y + CARD_H / 2, parentX, parentY);
       });
     });
 
-    // ── Right side: bottom half of each non-final round (mirrored) ───────────
+    // ── Right side: bottom half, mirrored ─────────────────────────────────────
     nonFinalRounds.forEach((roundNum, ri) => {
-      const depth    = numSide - 1 - ri;   // matches left side inversion
-      // Right side outermost = rightmost column = totalCols-1
-      // ri=0 → col totalCols-1, ri=1 → col totalCols-2 …
-      const colIdx   = totalCols - 1 - ri;
-      const x        = colX(colIdx);
-      const allM     = roundMap[roundNum];
-      const half     = Math.ceil(allM.length / 2);
-      const botHalf  = allM.slice(half);
-      const label    = allM[0]?.round_label || `Round ${roundNum}`;
+      const depth   = ri;
+      const colIdx  = finalColIdx + 1 + ri;   // innermost is adjacent to Final
+      const x       = colX(colIdx);
+      const allM    = roundMap[roundNum];
+      const half    = Math.ceil(allM.length / 2);
+      const botHalf = allM.slice(half);
+      const label   = allM[0]?.round_label || `Round ${roundNum}`;
 
       botHalf.forEach((m, mi) => {
-        const y = yTopEdge(depth, mi);
+        const y = yCard(depth, mi);
         drawCard(x, y, m, label, mi === 0);
 
         // Connector goes LEFT toward Final
-        const isLastSide   = ri === nonFinalRounds.length - 1;
         const parentColIdx = colIdx - 1;
         const parentRightX = colX(parentColIdx) + CARD_W;
         let   parentY;
 
-        if (isLastSide) {
+        if (ri === 0) {
           parentY = finalY + CARD_H / 2;
         } else {
-          parentY = yTopEdge(depth - 1, Math.floor(mi / 2)) + CARD_H / 2;
+          parentY = yCard(depth - 1, Math.floor(mi / 2)) + CARD_H / 2;
         }
 
-        // Right side: connector exits from left edge of card toward centre
         drawConn(x, y + CARD_H / 2, parentRightX, parentY);
       });
     });
 
+    // ── Wrap in zoomable container ────────────────────────────────────────────
     return `
       <style>
         .bc-zoom-wrap {
           position      : relative;
           width         : 100%;
           overflow      : hidden;
-          background    : var(--bg-secondary, #f8f8f6);
+          background    : var(--bg-secondary, #1e1e1e);
           border-radius : var(--radius-lg, 10px);
-          border        : 0.5px solid var(--border-light, #e0e0e0);
+          border        : 0.5px solid var(--border-light, #333);
           touch-action  : pan-x pan-y pinch-zoom;
           user-select   : none;
-          -webkit-overflow-scrolling : touch;
           cursor        : grab;
         }
         .bc-zoom-wrap:active { cursor: grabbing; }
-        .bc-zoom-hint {
-          position   : absolute;
-          bottom     : 8px;
-          right      : 10px;
-          font-size  : 10px;
-          color      : var(--text-tertiary, #aaa);
-          pointer-events: none;
-        }
         .bc-zoom-controls {
-          position   : absolute;
-          top        : 8px;
-          right      : 10px;
-          display    : flex;
-          gap        : 4px;
-          z-index    : 10;
+          position  : absolute;
+          top       : 8px;
+          right     : 10px;
+          display   : flex;
+          gap       : 4px;
+          z-index   : 10;
         }
         .bc-zoom-btn {
-          width      : 28px;
-          height     : 28px;
-          border     : 0.5px solid var(--border-light, #ccc);
-          border-radius: 6px;
-          background : var(--bg-primary, #fff);
-          color      : var(--text-primary, #222);
-          font-size  : 16px;
-          line-height: 1;
-          cursor     : pointer;
-          display    : flex;
-          align-items: center;
-          justify-content: center;
+          width           : 28px;
+          height          : 28px;
+          border          : 0.5px solid var(--border-light, #444);
+          border-radius   : 6px;
+          background      : var(--bg-primary, #2a2a2a);
+          color           : var(--text-primary, #eee);
+          font-size       : 16px;
+          cursor          : pointer;
+          display         : flex;
+          align-items     : center;
+          justify-content : center;
+          line-height     : 1;
         }
-        .bc-zoom-btn:hover { background: var(--bg-secondary, #f0f0ee); }
+        .bc-zoom-btn:hover { opacity: 0.8; }
+        .bc-zoom-hint {
+          position       : absolute;
+          bottom         : 8px;
+          right          : 10px;
+          font-size      : 10px;
+          color          : var(--text-tertiary, #666);
+          pointer-events : none;
+        }
         .bc-inner {
           transform-origin : top left;
           will-change      : transform;
-          display          : inline-block;   /* shrink-wrap to SVG width */
-          min-width        : 100%;
+          display          : inline-block;
         }
       </style>
-      <div class="bc-zoom-wrap" id="bc-wrap" style="height:${Math.min(totalH, 600)}px; min-height : 280px;">
+
+      <div class="bc-zoom-wrap" id="bc-wrap"
+           style="height:${Math.min(totalH, 560)}px; min-height:260px;">
         <div class="bc-zoom-controls">
           <button class="bc-zoom-btn" onclick="BracketZoom.zoomIn()"  title="Zoom in">+</button>
           <button class="bc-zoom-btn" onclick="BracketZoom.zoomOut()" title="Zoom out">−</button>
-          <button class="bc-zoom-btn" onclick="BracketZoom.reset()"   title="Reset zoom" style="font-size:11px;">⤢</button>
+          <button class="bc-zoom-btn" onclick="BracketZoom.reset()"   title="Fit"
+                  style="font-size:11px;">⤢</button>
         </div>
+
         <div class="bc-inner" id="bc-inner">
           <svg width="${totalW}" height="${totalH}"
                viewBox="0 0 ${totalW} ${totalH}"
@@ -454,144 +479,115 @@ const BracketPage = {
             ${svg.join('\n')}
           </svg>
         </div>
+
         <div class="bc-zoom-hint">Scroll or pinch to zoom · Drag to pan</div>
       </div>
+
       <script>
-        (function() {
-          // Guard: only init once even if bracket refreshes
-          if (window.BracketZoom && window.BracketZoom._active) return;
+      (function() {
+        if (window.BracketZoom && window.BracketZoom._active) return;
+        window.BracketZoom = {
+          _active  : true,
+          scale    : 1,
+          minScale : 0.2,
+          maxScale : 3,
+          ox: 0, oy: 0,
+          _drag: false, _lx: 0, _ly: 0, _pinchD: null,
+          wrap: null, inner: null,
 
-          const BracketZoom = window.BracketZoom = {
-            _active : true,
-            scale   : 1,
-            minScale: 0.25,
-            maxScale: 3,
-            ox: 0, oy: 0,          // current pan offset
-            _dragging: false,
-            _lastX: 0, _lastY: 0,
-            _pinchDist: null,
+          init() {
+            this.wrap  = document.getElementById('bc-wrap');
+            this.inner = document.getElementById('bc-inner');
+            if (!this.wrap || !this.inner) return;
 
-            wrap  : null,
-            inner : null,
+            // Fit to container on load
+            this.scale = this.wrap.clientWidth / ${totalW};
+            this.ox = 0; this.oy = 0;
+            this._apply();
 
-            init() {
-              this.wrap  = document.getElementById('bc-wrap');
-              this.inner = document.getElementById('bc-inner');
-              if (!this.wrap || !this.inner) return;
-
-              // On mobile always start fully fitted so the whole bracket
-              // is visible without needing to scroll or zoom first.
-              const isMobile = window.innerWidth < 768;
-              const fitScale = this.wrap.clientWidth / ${totalW};
-              this.scale     = isMobile ? fitScale : Math.min(fitScale, 1);
-              this.ox        = 0;
-              this.oy        = 0;
+            // Resize → re-fit
+            window.addEventListener('resize', () => {
+              this.scale = this.wrap.clientWidth / ${totalW};
+              this.ox = 0; this.oy = 0;
               this._apply();
+            });
 
-              // Re-fit if device is rotated
-              window.addEventListener('resize', () => {
-                const newFit = this.wrap.clientWidth / ${totalW};
-                if (window.innerWidth < 768) {
-                  this.scale = newFit;
-                  this.ox = 0; this.oy = 0;
-                  this._apply();
-                }
-              });
+            // Mouse wheel
+            this.wrap.addEventListener('wheel', e => {
+              e.preventDefault();
+              const r = this.wrap.getBoundingClientRect();
+              this._zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY > 0 ? 0.85 : 1.18);
+            }, { passive: false });
 
-              // Mouse wheel zoom
-              this.wrap.addEventListener('wheel', e => {
-                e.preventDefault();
-                const rect  = this.wrap.getBoundingClientRect();
-                const mx    = e.clientX - rect.left;
-                const my    = e.clientY - rect.top;
-                const delta = e.deltaY > 0 ? 0.85 : 1.18;
-                this._zoomAt(mx, my, delta);
-              }, { passive: false });
-
-              // Mouse drag pan
-              this.wrap.addEventListener('mousedown', e => {
-                this._dragging = true;
-                this._lastX = e.clientX; this._lastY = e.clientY;
-                this.wrap.style.cursor = 'grabbing';
-              });
-              window.addEventListener('mousemove', e => {
-                if (!this._dragging) return;
-                this.ox += e.clientX - this._lastX;
-                this.oy += e.clientY - this._lastY;
-                this._lastX = e.clientX; this._lastY = e.clientY;
-                this._apply();
-              });
-              window.addEventListener('mouseup', () => {
-                this._dragging = false;
-                if (this.wrap) this.wrap.style.cursor = 'grab';
-              });
-              this.wrap.style.cursor = 'grab';
-
-              // Touch pinch-zoom + pan
-              this.wrap.addEventListener('touchstart', e => {
-                if (e.touches.length === 2) {
-                  this._pinchDist = this._dist(e.touches);
-                } else if (e.touches.length === 1) {
-                  this._lastX = e.touches[0].clientX;
-                  this._lastY = e.touches[0].clientY;
-                }
-              }, { passive: true });
-
-              this.wrap.addEventListener('touchmove', e => {
-                // Only block default for pinch (2 fingers) — let single finger
-                // pan bubble to the browser's native scroll on mobile.
-                if (e.touches.length === 2) {
-                  e.preventDefault();
-                  const d = this._dist(e.touches);
-                  if (this._pinchDist) {
-                    const rect = this.wrap.getBoundingClientRect();
-                    const cx   = (e.touches[0].clientX + e.touches[1].clientX)/2 - rect.left;
-                    const cy   = (e.touches[0].clientY + e.touches[1].clientY)/2 - rect.top;
-                    this._zoomAt(cx, cy, d / this._pinchDist);
-                  }
-                  this._pinchDist = d;
-                } else if (e.touches.length === 1) {
-                  this.ox += e.touches[0].clientX - this._lastX;
-                  this.oy += e.touches[0].clientY - this._lastY;
-                  this._lastX = e.touches[0].clientX;
-                  this._lastY = e.touches[0].clientY;
-                  this._apply();
-                }
-              }, { passive: false });
-
-              this.wrap.addEventListener('touchend', () => { this._pinchDist = null; });
-            },
-
-            _dist(touches) {
-              const dx = touches[0].clientX - touches[1].clientX;
-              const dy = touches[0].clientY - touches[1].clientY;
-              return Math.sqrt(dx*dx + dy*dy);
-            },
-
-            _zoomAt(pivotX, pivotY, factor) {
-              const newScale = Math.min(this.maxScale, Math.max(this.minScale, this.scale * factor));
-              const ratio    = newScale / this.scale;
-              this.ox        = pivotX - ratio * (pivotX - this.ox);
-              this.oy        = pivotY - ratio * (pivotY - this.oy);
-              this.scale     = newScale;
+            // Mouse drag
+            this.wrap.addEventListener('mousedown', e => {
+              this._drag = true; this._lx = e.clientX; this._ly = e.clientY;
+            });
+            window.addEventListener('mousemove', e => {
+              if (!this._drag) return;
+              this.ox += e.clientX - this._lx; this.oy += e.clientY - this._ly;
+              this._lx = e.clientX; this._ly = e.clientY;
               this._apply();
-            },
+            });
+            window.addEventListener('mouseup', () => { this._drag = false; });
 
-            _apply() {
-              if (this.inner) {
-                this.inner.style.transform =
-                  'translate(' + this.ox + 'px,' + this.oy + 'px) scale(' + this.scale + ')';
+            // Touch
+            this.wrap.addEventListener('touchstart', e => {
+              if (e.touches.length === 2) {
+                this._pinchD = this._dist(e.touches);
+              } else {
+                this._lx = e.touches[0].clientX;
+                this._ly = e.touches[0].clientY;
               }
-            },
+            }, { passive: true });
 
-            zoomIn()  { const r=this.wrap.getBoundingClientRect(); this._zoomAt(r.width/2, r.height/2, 1.25); },
-            zoomOut() { const r=this.wrap.getBoundingClientRect(); this._zoomAt(r.width/2, r.height/2, 0.8);  },
-            reset()   { const fit=this.wrap.clientWidth/${totalW}; this.scale=Math.min(fit,1); this.ox=0; this.oy=0; this._apply(); },
-          };
+            this.wrap.addEventListener('touchmove', e => {
+              if (e.touches.length === 2) {
+                e.preventDefault();
+                const d = this._dist(e.touches);
+                if (this._pinchD) {
+                  const r  = this.wrap.getBoundingClientRect();
+                  const cx = (e.touches[0].clientX + e.touches[1].clientX) / 2 - r.left;
+                  const cy = (e.touches[0].clientY + e.touches[1].clientY) / 2 - r.top;
+                  this._zoomAt(cx, cy, d / this._pinchD);
+                }
+                this._pinchD = d;
+              } else if (e.touches.length === 1) {
+                this.ox += e.touches[0].clientX - this._lx;
+                this.oy += e.touches[0].clientY - this._ly;
+                this._lx = e.touches[0].clientX;
+                this._ly = e.touches[0].clientY;
+                this._apply();
+              }
+            }, { passive: false });
 
-          // Init after DOM settles
-          setTimeout(() => BracketZoom.init(), 50);
-        })();
+            this.wrap.addEventListener('touchend', () => { this._pinchD = null; });
+          },
+
+          _dist(t) {
+            const dx = t[0].clientX - t[1].clientX;
+            const dy = t[0].clientY - t[1].clientY;
+            return Math.sqrt(dx*dx + dy*dy);
+          },
+          _zoomAt(px, py, factor) {
+            const ns = Math.min(this.maxScale, Math.max(this.minScale, this.scale * factor));
+            const r  = ns / this.scale;
+            this.ox  = px - r * (px - this.ox);
+            this.oy  = py - r * (py - this.oy);
+            this.scale = ns;
+            this._apply();
+          },
+          _apply() {
+            if (this.inner)
+              this.inner.style.transform =
+                'translate(' + this.ox + 'px,' + this.oy + 'px) scale(' + this.scale + ')';
+          },
+          zoomIn()  { const r=this.wrap.getBoundingClientRect(); this._zoomAt(r.width/2,r.height/2,1.25); },
+          zoomOut() { const r=this.wrap.getBoundingClientRect(); this._zoomAt(r.width/2,r.height/2,0.8);  },
+          reset()   { this.scale=this.wrap.clientWidth/${totalW}; this.ox=0; this.oy=0; this._apply(); },
+        };
+        setTimeout(() => window.BracketZoom.init(), 60);
+      })();
       </script>`;
   },
 

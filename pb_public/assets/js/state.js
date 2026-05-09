@@ -23,7 +23,8 @@ const State = {
     name       : '',
     eventName  : '',
     names      : [],
-    masterRefs : [], // master_team IDs indexed by team slot
+    masterRefs : [],
+    selectedTeams : [], 
   },
 };
 

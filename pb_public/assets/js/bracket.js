@@ -184,9 +184,15 @@ const BracketPage = {
       return startY + index * slot + slot / 2 - CARD_H / 2;
     };
 
-    // Total SVG height: driven by the outermost round (depth 0, most matches)
-    const r1Count = roundMap[roundNums[0]].length;
-    const totalH  = startY + r1Count * baseSpacing + MARGIN_Y;
+    // Total height must reach the bottom of the deepest card.
+    // With top-down hierarchy, the outermost round has the largest depth value
+    // (numSide - 1) and the most cards, so it extends furthest down.
+    // Deepest card bottom = finalY + FINAL_TOP_OFFSET + yTopEdge(maxDepth, maxIndex) + CARD_H
+    const maxDepth     = numSide - 1;           // outermost round depth after inversion
+    const r1Count      = roundMap[roundNums[0]].length;
+    const halfCount    = Math.ceil(r1Count / 2); // cards on each side at outermost round
+    const deepestCardY = yTopEdge(maxDepth, halfCount - 1) + CARD_H;
+    const totalH       = deepestCardY + MARGIN_Y + 40;  // +40 bottom breathing room
     const totalW  = MARGIN_X * 2 + totalCols * CARD_W + (totalCols - 1) * COL_GAP;
 
     // ── SVG accumulator ───────────────────────────────────────────────────────
@@ -298,11 +304,14 @@ const BracketPage = {
     const finalX = colX(finalColIdx);
     const finalMatches = roundMap[finalRoundNum];
     // Centre vertically in the SVG
-    // Position Final near the top, aligned with the first card of the outermost round
-    const finalY = yTopEdge(0, 0);
-
+    // Final is always pinned at the top (just below trophy + label).
+    // All other rounds cascade downward from it.
+    const TROPHY_H         = 40;   // space for trophy icon above Final card
+    const FINAL_TOP_OFFSET = TROPHY_H + 16;   // trophy + breathing room
+    const finalY           = startY + FINAL_TOP_OFFSET;
+    
     // Trophy icon above the Final card
-    const trophyY = finalY - 36;
+    const trophyY = finalY - TROPHY_H + 4;
     svg.push(`<text x="${finalX + CARD_W / 2}" y="${trophyY}"
       text-anchor="middle" font-size="22" font-family="Segoe UI Emoji,Apple Color Emoji,sans-serif"
       dominant-baseline="auto">🏆</text>`);
@@ -312,9 +321,13 @@ const BracketPage = {
     });
 
     // ── Left side: top half of each non-final round ───────────────────────────
+    // In a top-down hierarchy, rounds further from the Final (higher depth)
+    // are positioned lower. depth 0 = directly feeds Final (innermost side round).
+    // depth increases as we go further from the Final toward outermost round.
+    // We invert: depth = numSide - 1 - ri  so outermost gets largest depth (lowest Y).
     nonFinalRounds.forEach((roundNum, ri) => {
-      const depth    = ri;           // 0 = outermost, increases toward Final
-      const colIdx   = ri;           // col 0 = leftmost
+      const depth    = numSide - 1 - ri;   // outermost round = largest depth = lowest Y
+      const colIdx   = ri;
       const x        = colX(colIdx);
       const allM     = roundMap[roundNum];
       const half     = Math.ceil(allM.length / 2);
@@ -332,11 +345,10 @@ const BracketPage = {
         let   parentY;
 
         if (isLastSide) {
-          // Parent is the Final — use finalY
           parentY = finalY + CARD_H / 2;
         } else {
-          // Parent is the next side round at depth+1, index floor(mi/2)
-          parentY = yTopEdge(depth + 1, Math.floor(mi / 2)) + CARD_H / 2;
+          // depth decreases toward Final (depth-1 is closer to Final)
+          parentY = yTopEdge(depth - 1, Math.floor(mi / 2)) + CARD_H / 2;
         }
 
         drawConn(x + CARD_W, y + CARD_H / 2, parentX, parentY);
@@ -345,7 +357,7 @@ const BracketPage = {
 
     // ── Right side: bottom half of each non-final round (mirrored) ───────────
     nonFinalRounds.forEach((roundNum, ri) => {
-      const depth    = ri;
+      const depth    = numSide - 1 - ri;   // matches left side inversion
       // Right side outermost = rightmost column = totalCols-1
       // ri=0 → col totalCols-1, ri=1 → col totalCols-2 …
       const colIdx   = totalCols - 1 - ri;
@@ -368,7 +380,7 @@ const BracketPage = {
         if (isLastSide) {
           parentY = finalY + CARD_H / 2;
         } else {
-          parentY = yTopEdge(depth + 1, Math.floor(mi / 2)) + CARD_H / 2;
+          parentY = yTopEdge(depth - 1, Math.floor(mi / 2)) + CARD_H / 2;
         }
 
         // Right side: connector exits from left edge of card toward centre
@@ -378,21 +390,209 @@ const BracketPage = {
 
     return `
       <style>
-        .bc-scroll {
-          overflow-x : auto;
-          overflow-y : hidden;
-          padding    : 0 0 1.5rem;
-          -webkit-overflow-scrolling: touch;
+        .bc-zoom-wrap {
+          position      : relative;
+          width         : 100%;
+          overflow      : hidden;
+          background    : var(--bg-secondary, #f8f8f6);
+          border-radius : var(--radius-lg, 10px);
+          border        : 0.5px solid var(--border-light, #e0e0e0);
+          touch-action  : pan-x pan-y pinch-zoom;
+          user-select   : none;
+          -webkit-overflow-scrolling : touch;
+          cursor        : grab;
         }
-        .bc-scroll svg { display:block; }
+        .bc-zoom-wrap:active { cursor: grabbing; }
+        .bc-zoom-hint {
+          position   : absolute;
+          bottom     : 8px;
+          right      : 10px;
+          font-size  : 10px;
+          color      : var(--text-tertiary, #aaa);
+          pointer-events: none;
+        }
+        .bc-zoom-controls {
+          position   : absolute;
+          top        : 8px;
+          right      : 10px;
+          display    : flex;
+          gap        : 4px;
+          z-index    : 10;
+        }
+        .bc-zoom-btn {
+          width      : 28px;
+          height     : 28px;
+          border     : 0.5px solid var(--border-light, #ccc);
+          border-radius: 6px;
+          background : var(--bg-primary, #fff);
+          color      : var(--text-primary, #222);
+          font-size  : 16px;
+          line-height: 1;
+          cursor     : pointer;
+          display    : flex;
+          align-items: center;
+          justify-content: center;
+        }
+        .bc-zoom-btn:hover { background: var(--bg-secondary, #f0f0ee); }
+        .bc-inner {
+          transform-origin : top left;
+          will-change      : transform;
+          display          : inline-block;   /* shrink-wrap to SVG width */
+          min-width        : 100%;
+        }
       </style>
-      <div class="bc-scroll">
-        <svg width="${totalW}" height="${totalH}"
-             viewBox="0 0 ${totalW} ${totalH}"
-             xmlns="http://www.w3.org/2000/svg">
-          ${svg.join('\n')}
-        </svg>
-      </div>`;
+      <div class="bc-zoom-wrap" id="bc-wrap" style="height:${Math.min(totalH, 600)}px; min-height : 280px;">
+        <div class="bc-zoom-controls">
+          <button class="bc-zoom-btn" onclick="BracketZoom.zoomIn()"  title="Zoom in">+</button>
+          <button class="bc-zoom-btn" onclick="BracketZoom.zoomOut()" title="Zoom out">−</button>
+          <button class="bc-zoom-btn" onclick="BracketZoom.reset()"   title="Reset zoom" style="font-size:11px;">⤢</button>
+        </div>
+        <div class="bc-inner" id="bc-inner">
+          <svg width="${totalW}" height="${totalH}"
+               viewBox="0 0 ${totalW} ${totalH}"
+               xmlns="http://www.w3.org/2000/svg">
+            ${svg.join('\n')}
+          </svg>
+        </div>
+        <div class="bc-zoom-hint">Scroll or pinch to zoom · Drag to pan</div>
+      </div>
+      <script>
+        (function() {
+          // Guard: only init once even if bracket refreshes
+          if (window.BracketZoom && window.BracketZoom._active) return;
+
+          const BracketZoom = window.BracketZoom = {
+            _active : true,
+            scale   : 1,
+            minScale: 0.25,
+            maxScale: 3,
+            ox: 0, oy: 0,          // current pan offset
+            _dragging: false,
+            _lastX: 0, _lastY: 0,
+            _pinchDist: null,
+
+            wrap  : null,
+            inner : null,
+
+            init() {
+              this.wrap  = document.getElementById('bc-wrap');
+              this.inner = document.getElementById('bc-inner');
+              if (!this.wrap || !this.inner) return;
+
+              // On mobile always start fully fitted so the whole bracket
+              // is visible without needing to scroll or zoom first.
+              const isMobile = window.innerWidth < 768;
+              const fitScale = this.wrap.clientWidth / ${totalW};
+              this.scale     = isMobile ? fitScale : Math.min(fitScale, 1);
+              this.ox        = 0;
+              this.oy        = 0;
+              this._apply();
+
+              // Re-fit if device is rotated
+              window.addEventListener('resize', () => {
+                const newFit = this.wrap.clientWidth / ${totalW};
+                if (window.innerWidth < 768) {
+                  this.scale = newFit;
+                  this.ox = 0; this.oy = 0;
+                  this._apply();
+                }
+              });
+
+              // Mouse wheel zoom
+              this.wrap.addEventListener('wheel', e => {
+                e.preventDefault();
+                const rect  = this.wrap.getBoundingClientRect();
+                const mx    = e.clientX - rect.left;
+                const my    = e.clientY - rect.top;
+                const delta = e.deltaY > 0 ? 0.85 : 1.18;
+                this._zoomAt(mx, my, delta);
+              }, { passive: false });
+
+              // Mouse drag pan
+              this.wrap.addEventListener('mousedown', e => {
+                this._dragging = true;
+                this._lastX = e.clientX; this._lastY = e.clientY;
+                this.wrap.style.cursor = 'grabbing';
+              });
+              window.addEventListener('mousemove', e => {
+                if (!this._dragging) return;
+                this.ox += e.clientX - this._lastX;
+                this.oy += e.clientY - this._lastY;
+                this._lastX = e.clientX; this._lastY = e.clientY;
+                this._apply();
+              });
+              window.addEventListener('mouseup', () => {
+                this._dragging = false;
+                if (this.wrap) this.wrap.style.cursor = 'grab';
+              });
+              this.wrap.style.cursor = 'grab';
+
+              // Touch pinch-zoom + pan
+              this.wrap.addEventListener('touchstart', e => {
+                if (e.touches.length === 2) {
+                  this._pinchDist = this._dist(e.touches);
+                } else if (e.touches.length === 1) {
+                  this._lastX = e.touches[0].clientX;
+                  this._lastY = e.touches[0].clientY;
+                }
+              }, { passive: true });
+
+              this.wrap.addEventListener('touchmove', e => {
+                // Only block default for pinch (2 fingers) — let single finger
+                // pan bubble to the browser's native scroll on mobile.
+                if (e.touches.length === 2) {
+                  e.preventDefault();
+                  const d = this._dist(e.touches);
+                  if (this._pinchDist) {
+                    const rect = this.wrap.getBoundingClientRect();
+                    const cx   = (e.touches[0].clientX + e.touches[1].clientX)/2 - rect.left;
+                    const cy   = (e.touches[0].clientY + e.touches[1].clientY)/2 - rect.top;
+                    this._zoomAt(cx, cy, d / this._pinchDist);
+                  }
+                  this._pinchDist = d;
+                } else if (e.touches.length === 1) {
+                  this.ox += e.touches[0].clientX - this._lastX;
+                  this.oy += e.touches[0].clientY - this._lastY;
+                  this._lastX = e.touches[0].clientX;
+                  this._lastY = e.touches[0].clientY;
+                  this._apply();
+                }
+              }, { passive: false });
+
+              this.wrap.addEventListener('touchend', () => { this._pinchDist = null; });
+            },
+
+            _dist(touches) {
+              const dx = touches[0].clientX - touches[1].clientX;
+              const dy = touches[0].clientY - touches[1].clientY;
+              return Math.sqrt(dx*dx + dy*dy);
+            },
+
+            _zoomAt(pivotX, pivotY, factor) {
+              const newScale = Math.min(this.maxScale, Math.max(this.minScale, this.scale * factor));
+              const ratio    = newScale / this.scale;
+              this.ox        = pivotX - ratio * (pivotX - this.ox);
+              this.oy        = pivotY - ratio * (pivotY - this.oy);
+              this.scale     = newScale;
+              this._apply();
+            },
+
+            _apply() {
+              if (this.inner) {
+                this.inner.style.transform =
+                  'translate(' + this.ox + 'px,' + this.oy + 'px) scale(' + this.scale + ')';
+              }
+            },
+
+            zoomIn()  { const r=this.wrap.getBoundingClientRect(); this._zoomAt(r.width/2, r.height/2, 1.25); },
+            zoomOut() { const r=this.wrap.getBoundingClientRect(); this._zoomAt(r.width/2, r.height/2, 0.8);  },
+            reset()   { const fit=this.wrap.clientWidth/${totalW}; this.scale=Math.min(fit,1); this.ox=0; this.oy=0; this._apply(); },
+          };
+
+          // Init after DOM settles
+          setTimeout(() => BracketZoom.init(), 50);
+        })();
+      </script>`;
   },
 
   /* ═══════════════════════════════════════════════════════════════════════════

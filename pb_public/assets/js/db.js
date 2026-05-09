@@ -136,14 +136,15 @@ const DB = {
   /**
    * Create a new master team record.
    */
-  async createMasterTeam(name, gender = null, ageGroup = null, shortName = null, homeCourt = null) {
-    Logger.info('DB.createMasterTeam', { name, gender, ageGroup });
+  async createMasterTeam(name, gender = null, ageGroup = null, shortName = null, homeCourt = null, clubName = null) {
+    Logger.info('DB.createMasterTeam', { name, gender, ageGroup, clubName });
     return pb.collection('master_teams').create({
       name,
-      gender     : gender     || null,
-      age_group  : ageGroup   || null,
-      short_name : shortName  || null,
-      home_court : homeCourt  || null,
+      gender     : gender    || null,
+      age_group  : ageGroup  || null,
+      short_name : shortName || null,
+      home_court : homeCourt || null,
+      club_name  : clubName  || null,
       active     : true,
     });
   },

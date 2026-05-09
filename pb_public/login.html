@@ -152,7 +152,7 @@
           <label for="signin-password">Password</label>
           <div class="password-wrap">
             <input type="password" id="signin-password" placeholder="••••••••" autocomplete="current-password" />
-            <button class="password-toggle" onclick="togglePassword('signin-password', this)" type="button">👁</button>
+            <button class="password-toggle" onclick="togglePassword('signin-password', this)" type="button"><svg class="icon icon-sm"><use href="#icon-eye"/></svg></button>
           </div>
         </div>
         <button class="login-btn" id="btn-signin" onclick="doSignIn()">Sign in</button>
@@ -183,7 +183,7 @@
           <label for="reg-confirm">Confirm password</label>
           <div class="password-wrap">
             <input type="password" id="reg-confirm" placeholder="Repeat password" autocomplete="new-password" />
-            <button class="password-toggle" onclick="togglePassword('reg-confirm', this)" type="button">👁</button>
+            <button class="password-toggle" onclick="togglePassword('reg-confirm', this)" type="button"><svg class="icon icon-sm"><use href="#icon-eye"/></svg></button>
           </div>
         </div>
         <button class="login-btn" id="btn-register" onclick="doRegister()">Create account</button>

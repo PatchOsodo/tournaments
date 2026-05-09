@@ -215,7 +215,7 @@ const App = {
           <span class="status-badge badge-${t.status}">${t.status}</span>
           ${resumeBtn}
           <button class="btn sm primary" onclick="App.openTournament('${t.id}')">Open</button>
-          <a class="btn sm ghost" href="bracket.html?id=${t.id}" target="_blank">Bracket</a>
+          <a class="btn sm ghost" href="bracket.html?id=${t.id}">Bracket</a>
           ${deleteBtn}
           ${favBtn}
         </div>
@@ -583,63 +583,160 @@ async resumeSetup(tournamentId) {
   /* ── 11d. NAMES SCREEN ───────────────────────────────────────────────── */
 
   async goToNames() {
-      UI.clearError('setup-error');
+    UI.clearError('setup-error');
 
-      const series  = (document.getElementById('event-series')?.value  || '').trim();
-      const edition = (document.getElementById('event-edition')?.value || '').trim();
-      const raw     = document.getElementById('team-count')?.value.trim();
-      const n       = parseInt(raw, 10);
+    const series  = (document.getElementById('event-series')?.value  || '').trim();
+    const edition = (document.getElementById('event-edition')?.value || '').trim();
+    const raw     = document.getElementById('team-count')?.value.trim();
+    const n       = parseInt(raw, 10);
 
-      if (!series) {
-        UI.showError('setup-error', 'setup-error-msg', 'Please enter a tournament name.');
-        document.getElementById('event-series')?.focus();
+    if (!series) {
+      UI.showError('setup-error', 'setup-error-msg', 'Please enter a tournament name.');
+      document.getElementById('event-series')?.focus();
+      return;
+    }
+    if (!raw || isNaN(n) || n < 3 || n > 32) {
+      UI.showError('setup-error', 'setup-error-msg', 'Enter a number of teams between 3 and 32.');
+      document.getElementById('team-count')?.classList.add('input-error');
+      return;
+    }
+
+    const ag           = State.setupData.ageGroup || '';
+    const gender       = State.setupData.gender   || '';
+    const categoryName = [ag, gender].filter(Boolean).join(' ') || 'Open';
+
+    State.setupData.name         = categoryName;
+    State.setupData.eventName    = [series, edition].filter(Boolean).join(' ');
+    State.setupData.eventSeries  = series  || null;
+    State.setupData.eventEdition = edition || null;
+    State.setupData.teamCount    = n;
+    State.setupData.selectedTeams = []; // reset selection
+
+    // Load registered teams for this category
+    try {
+      State.masterTeams = await DB.getMasterTeams(
+        State.setupData.gender   || null,
+        State.setupData.ageGroup || null,
+      );
+      Logger.info('Master teams loaded for picker', { count: State.masterTeams.length });
+    } catch (e) {
+      State.masterTeams = [];
+      Logger.warn('Could not load master teams', { error: e.message });
+    }
+
+    App._renderTeamPicker(n);
+    UI.showScreen('screen-names');
+  },
+
+  _renderTeamPicker(n) {
+    const grid = document.getElementById('team-inputs');
+    if (!grid) return;
+
+    const catLabel = [State.setupData.ageGroup, State.setupData.gender]
+      .filter(Boolean).join(' ');
+
+    if (!State.masterTeams.length) {
+      grid.innerHTML = `
+        <div class="empty-state" style="padding:1.5rem 0;">
+          <span class="empty-icon">🏀</span>
+          No registered ${catLabel ? escHtml(catLabel) + ' ' : ''}teams yet.<br>
+          <a href="teams.html" style="color:var(--accent);font-weight:500;">
+            Register teams first →
+          </a>
+        </div>`;
+      return;
+    }
+
+    const selectedIds = new Set((State.setupData.selectedTeams || []).map(t => t.id));
+
+    grid.innerHTML = `
+      <div style="font-size:12px;color:var(--text-tertiary);margin-bottom:.75rem;">
+        Select up to <strong>${n}</strong> teams from registered
+        ${catLabel ? escHtml(catLabel) + ' ' : ''}teams.
+        <span id="picker-count" style="color:var(--accent);font-weight:600;">
+          0/${n} selected
+        </span>
+      </div>
+      <div id="team-picker-list">
+        ${State.masterTeams.map(t => {
+          const isSelected = selectedIds.has(t.id);
+          return `
+            <div id="pick-${t.id}"
+                 onclick="App._toggleTeamPick('${t.id}', ${n})"
+                 style="display:flex;align-items:center;gap:12px;
+                        padding:.7rem 1rem;margin-bottom:6px;
+                        background:${isSelected ? 'var(--bg-success)' : 'var(--bg-primary)'};
+                        border:.5px solid ${isSelected ? 'var(--accent)' : 'var(--border-light)'};
+                        border-radius:var(--radius-md);cursor:pointer;transition:all .15s;">
+              <div style="width:20px;height:20px;border-radius:50%;flex-shrink:0;
+                          background:${isSelected ? 'var(--accent)' : 'var(--bg-secondary)'};
+                          border:.5px solid ${isSelected ? 'var(--accent)' : 'var(--border-light)'};
+                          display:flex;align-items:center;justify-content:center;
+                          font-size:11px;color:white;">
+                ${isSelected ? '✓' : ''}
+              </div>
+              <div style="flex:1;min-width:0;">
+                <div style="font-size:13px;font-weight:500;color:var(--text-primary);">
+                  ${escHtml(t.name)}
+                </div>
+                ${t.home_court ? `<div style="font-size:11px;color:var(--text-tertiary);">
+                  🏟 ${escHtml(t.home_court)}
+                </div>` : ''}
+              </div>
+              ${t.short_name ? `<span style="font-size:10px;color:var(--text-tertiary);
+                background:var(--bg-secondary);padding:1px 6px;border-radius:4px;
+                border:.5px solid var(--border-light);">${escHtml(t.short_name)}</span>` : ''}
+            </div>`;
+        }).join('')}
+      </div>`;
+
+    App._updatePickerCount(n);
+  },
+
+  _toggleTeamPick(teamId, max) {
+    if (!State.setupData.selectedTeams) State.setupData.selectedTeams = [];
+    const idx = State.setupData.selectedTeams.findIndex(t => t.id === teamId);
+
+    if (idx >= 0) {
+      // Deselect
+      State.setupData.selectedTeams.splice(idx, 1);
+    } else {
+      // Select — enforce max
+      if (State.setupData.selectedTeams.length >= max) {
+        UI.showError('names-error', 'names-error-msg',
+          `You can only select ${max} teams. Deselect one first.`);
         return;
       }
-      if (!raw || isNaN(n) || n < 3 || n > 32) {
-        UI.showError('setup-error', 'setup-error-msg', 'Enter a number of teams between 3 and 32.');
-        document.getElementById('team-count')?.classList.add('input-error');
-        return;
+      UI.clearError('names-error');
+      const team = State.masterTeams.find(t => t.id === teamId);
+      if (team) State.setupData.selectedTeams.push(team);
+    }
+
+    // Update card appearance
+    const card = document.getElementById(`pick-${teamId}`);
+    const isNowSelected = State.setupData.selectedTeams.some(t => t.id === teamId);
+    if (card) {
+      card.style.background   = isNowSelected ? 'var(--bg-success)' : 'var(--bg-primary)';
+      card.style.borderColor  = isNowSelected ? 'var(--accent)'     : 'var(--border-light)';
+      const dot = card.querySelector('div > div');
+      if (dot) {
+        dot.style.background = isNowSelected ? 'var(--accent)' : 'var(--bg-secondary)';
+        dot.style.borderColor = isNowSelected ? 'var(--accent)' : 'var(--border-light)';
+        dot.textContent = isNowSelected ? '✓' : '';
       }
+    }
 
-      const ag           = State.setupData.ageGroup || '';
-      const gender       = State.setupData.gender   || '';
-      const categoryName = [ag, gender].filter(Boolean).join(' ') || 'Open';
+    App._updatePickerCount(max);
+  },
 
-      State.setupData.name         = categoryName;
-      State.setupData.eventName    = [series, edition].filter(Boolean).join(' ');
-      State.setupData.eventSeries  = series  || null;
-      State.setupData.eventEdition = edition || null;
-      State.setupData.teamCount    = n;
-
-      // Load master teams for autocomplete
-      try {
-        State.masterTeams = await DB.getMasterTeams();
-        Logger.info('Master teams loaded for autocomplete', { count: State.masterTeams.length });
-      } catch (e) {
-        State.masterTeams = [];
-        Logger.warn('Could not load master teams', { error: e.message });
-      }
-
-      const grid = document.getElementById('team-inputs');
-      if (grid) {
-        const datalist = `<datalist id="master-team-suggestions">
-          ${State.masterTeams.map(t => `<option value="${escHtml(t.name)}">`).join('')}
-        </datalist>`;
-        grid.innerHTML = datalist + Array.from({ length: n }, (_, i) => `
-          <div class="team-input-wrap">
-            <span class="team-num">${i + 1}</span>
-            <input type="text"
-                   placeholder="Team ${i + 1}"
-                   id="tn-${i}"
-                   value="${escHtml(State.setupData.names[i] || '')}"
-                   maxlength="30"
-                   list="master-team-suggestions"
-                   autocomplete="off" />
-          </div>`).join('');
-      }
-
-      UI.showScreen('screen-names');
-    },
+  _updatePickerCount(max) {
+    const count = (State.setupData.selectedTeams || []).length;
+    const el    = document.getElementById('picker-count');
+    if (el) {
+      el.textContent = `${count}/${max} selected`;
+      el.style.color = count === max ? 'var(--accent)' : 'var(--text-tertiary)';
+    }
+  },
 
   /* ── 11e. FIXTURE GENERATION & PERSISTENCE ───────────────────────────── */
 
@@ -680,26 +777,29 @@ async resumeSetup(tournamentId) {
             );
         Logger.info(isResume ? 'Tournament resumed' : 'Tournament created', { id: tournament.id });
 
+    const selectedTeams = State.setupData.selectedTeams || [];
+    if (!selectedTeams.length) {
+      throw new Error('No teams selected. Please select teams before generating fixtures.');
+    }
+
     const teamMap   = {};
     const numGroups = State.setupData.format === 'group_stage'
-        ? (names.length <= 8 ? 2 : names.length <= 12 ? 3 : 4) : null;
+      ? (selectedTeams.length <= 8 ? 2 : selectedTeams.length <= 12 ? 3 : 4) : null;
 
-      // Determine category for master team linking
-    const gender   = State.setupData.gender   || null;
-    const ageGroup = State.setupData.ageGroup || null;
+    for (let i = 0; i < selectedTeams.length; i++) {
+      const masterTeam = selectedTeams[i];
+      const groupName  = numGroups ? 'ABCDEFGH'[i % numGroups] : null;
 
-      for (let i = 0; i < names.length; i++) {
-        const groupName = numGroups ? 'ABCDEFGH'[i % numGroups] : null;
+      // Master team already exists — link directly, no create needed
+      const team = await DB.createTeam(
+        tournament.id, masterTeam.name, i + 1, groupName, masterTeam.id
+      );
+      teamMap[masterTeam.name] = team.id;
+      Logger.debug('Team created from picker', { name: masterTeam.name, masterTeamId: masterTeam.id });
+    }
 
-        // Get or create master team record — links returning teams automatically
-        const masterTeamId = await DB.getOrCreateMasterTeam(names[i],  gender, ageGroup);
-
-        const team = await DB.createTeam(
-          tournament.id, names[i], i + 1, groupName, masterTeamId
-        );
-        teamMap[names[i]] = team.id;
-        Logger.debug('Team created', { name: names[i], masterTeamId, teamId: team.id });
-      }
+    // Use selected team names for fixture generation
+    const names = selectedTeams.map(t => t.name);
 
       let generated;
       if      (State.setupData.format === 'round_robin') generated = genRoundRobin(names);

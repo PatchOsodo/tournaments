@@ -1,29 +1,19 @@
 /**
  * =============================================================================
- * BASKETBALL TOURNAMENT MANAGER — bracket.js  v4.2.0
+ * BASKETBALL TOURNAMENT MANAGER — bracket.js  v5.0.0
  *
- * FIXES IN v4.2.0 vs v4.1.0
- * ──────────────────────────
- * BUG 1 — Y positions wrong (cards overlapped).
- *   Old formula: startY + i * spacing  (always anchored at top)
- *   This placed the Semifinals card at the same Y as the first Quarterfinals
- *   card instead of vertically centred between both QF children.
- *
- *   Correct formula: startY + i * spacing + spacing/2 - CARD_H/2
- *   Each card sits centred in its allocated vertical slot, so every parent
- *   is geometrically centred between its two children. Verified:
- *     QF centres:  88, 176  →  SF centre = (88+176)/2 = 132  ✓
- *
- * BUG 2 — Right-side depth was computed with wrong index arithmetic.
- *   Fix: both sides now share one yTopEdge(depth, index) helper.
- *   Depth for each side round is simply its index in nonFinalRounds (0=outermost).
- *
- * Column layout (unchanged from v4.1.0):
- *   Split by match_number within each round — top half left, bottom half right.
- *   4-team  (2 rounds): SF-top | FINAL | SF-bot              (3 cols)
- *   6-team  (3 rounds): QF-top | SF-top | FINAL | SF-bot | QF-bot  (5 cols)
- *   8-team  (3 rounds): QF-top | SF-top | FINAL | SF-bot | QF-bot  (5 cols)
- *   16-team (4 rounds): R1-top | QF-top | SF-top | FINAL | SF-bot | QF-bot | R1-bot  (7 cols)
+ * CHANGES IN v5.0.0
+ * ──────────────────
+ * • _buildMirroredBracket completely rewritten:
+ *     - UCL-style top-to-bottom flow on each side
+ *     - Trophy centred between the two sides at the top
+ *     - Final centred below the trophy
+ *     - Left side feeds into the Final from the left
+ *     - Right side feeds into the Final from the right
+ *     - Connector lines: horizontal stubs → vertical runs → horizontal into parent
+ * • Initial-letter badges (coloured circles) — toggled via .show-badges class
+ * • Mobile swipe-tab layout — toggled via .mobile-tabs class (or auto at ≤480 px)
+ * • Two new BracketPage methods: toggleBadges(), toggleTabs()
  * =============================================================================
  */
 
@@ -32,7 +22,7 @@ const CONFIG = {
                  window.location.hostname === '127.0.0.1'
     ? 'http://127.0.0.1:8090'
     : window.location.origin,
-  VERSION : '4.2.0',
+  VERSION : '5.0.0',
 };
 
 const pb = new PocketBase(CONFIG.API_BASE_URL);
@@ -48,6 +38,30 @@ function escHtml(str) {
   return String(str)
     .replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;')
     .replace(/"/g,'&quot;').replace(/'/g,'&#39;');
+}
+
+/* =============================================================================
+   BADGE HELPERS
+   ============================================================================= */
+
+/** Derive 2-letter initials from a team name */
+function teamInitials(name) {
+  if (!name || name === 'TBD') return '?';
+  const words = name.trim().split(/\s+/);
+  if (words.length >= 2) return (words[0][0] + words[1][0]).toUpperCase();
+  return name.slice(0, 2).toUpperCase();
+}
+
+/** Deterministic accent colour from team name — one of 10 palette entries */
+function badgeColor(name) {
+  const palette = [
+    '#1D9E75','#E84040','#4A7FE5','#E5A020',
+    '#9B59B6','#E67E22','#16A085','#C0392B',
+    '#2980B9','#F39C12',
+  ];
+  let h = 0;
+  for (const c of (name || '')) h = (h * 31 + c.charCodeAt(0)) & 0xFFFF;
+  return palette[h % palette.length];
 }
 
 /* =============================================================================
@@ -109,40 +123,62 @@ const BracketPage = {
     const t      = BracketPage.tournament;
     const canvas = document.getElementById('bracket-canvas-area');
     if (!canvas) return;
-    if      (t.format === 'elimination')  canvas.innerHTML = BracketPage._buildMirroredBracket(BracketPage.fixtures);
-    else if (t.format === 'round_robin')  canvas.innerHTML = BracketPage._buildRoundRobinView(BracketPage.fixtures);
-    else if (t.format === 'group_stage')  canvas.innerHTML = BracketPage._buildGroupStageBracket(BracketPage.fixtures);
+    if      (t.format === 'elimination') canvas.innerHTML = BracketPage._buildMirroredBracket(BracketPage.fixtures);
+    else if (t.format === 'round_robin') canvas.innerHTML = BracketPage._buildRoundRobinView(BracketPage.fixtures);
+    else if (t.format === 'group_stage') canvas.innerHTML = BracketPage._buildGroupStageBracket(BracketPage.fixtures);
     else canvas.innerHTML = `<div class="no-bracket">Unknown format: ${escHtml(t.format)}</div>`;
     BracketPage._renderChampion();
   },
 
+  /* ─────────────────────────────────────────────────────────────────────────
+     TOGGLE HELPERS  (called by buttons in bracket.html)
+   ───────────────────────────────────────────────────────────────────────── */
+  toggleBadges() {
+    document.getElementById('bc-wrap')?.classList.toggle('show-badges');
+  },
+  toggleTabs() {
+    document.getElementById('bc-wrap')?.classList.toggle('mobile-tabs');
+  },
+
   /* ═══════════════════════════════════════════════════════════════════════════
-     MIRRORED BRACKET — v4.2.0
+     MIRRORED BRACKET v5.0 — UCL top-to-bottom style
+     ───────────────────────────────────────────────────────────────────────────
+     GEOMETRY
+     ─────────
+     The bracket is split into three visual zones:
+       • Left half  — rounds stacked top-to-bottom, outermost round at the top
+       • Centre     — trophy icon + Final card
+       • Right half — same as left, mirrored horizontally
 
-     Structure: left half (top of draw) flows right → Final ← left (bottom of draw)
+     Round columns:
+       Left side  (outermost→innermost, left→right): col 0 … col (numSide-1)
+       Final:     col numSide
+       Right side (innermost→outermost, left→right): col (numSide+1) … col (2*numSide)
 
-     Y-centring formula (verified):
-       Each match at (depth, index) occupies a vertical slot of height:
-           slot = baseSpacing × 2^depth
-       Top edge of card within that slot:
-           y = startY + index × slot + slot/2 − CARD_H/2
-       This ensures every parent is exactly centred between its two children.
+     Y positioning — top-to-bottom tree:
+       Every round column has a fixed number of cards: 2^depth, where depth=0
+       is the innermost round (feeds Final directly).
+       Cards are evenly spaced within a total allocated height.
+       Parent card is always centred between its two children.
 
-     Column split:
-       nonFinalRounds[0..k] each split by match_number:
-         top half (M1..Mceil(N/2))  → left columns, depth=ri (ri=0 outermost)
-         bot half (Mceil(N/2)+1..N) → right columns, depth=ri (ri=0 outermost)
-       Final always in centre column.
+     Connectors:
+       Left side : right edge of card → horizontal stub right → vertical run
+                   → horizontal run into left edge of parent card
+       Right side: left edge of card → horizontal stub left → vertical run
+                   → horizontal run into right edge of parent card
+
+     Badges:
+       Both a seed-number text AND a coloured-circle badge are rendered for
+       every team row. The CSS class .show-badges on #bc-wrap hides seed numbers
+       and reveals badges. Default shows seed numbers.
+
+     Mobile tabs:
+       .mobile-tabs on #bc-wrap activates a tab bar (Left / Final / Right).
+       At ≤480 px viewport width this class is auto-applied via a CSS @media rule.
    ═══════════════════════════════════════════════════════════════════════════ */
-  // ═══════════════════════════════════════════════════════════════════════════
-  // REPLACE the entire _buildMirroredBracket method with this block.
-  // Everything from   _buildMirroredBracket(allFixtures) {
-  //             to the closing  },
-  // ═══════════════════════════════════════════════════════════════════════════
-
   _buildMirroredBracket(allFixtures) {
 
-    // ── Filter and group fixtures ────────────────────────────────────────────
+    /* ── 0. Filter & group ─────────────────────────────────────────────────── */
     const fx = allFixtures
       .filter(f => !f.is_bye && !f.group_name)
       .sort((a, b) => a.round !== b.round ? a.round - b.round : a.match_number - b.match_number);
@@ -158,78 +194,128 @@ const BracketPage = {
     if (!roundNums.length) return '<div class="no-bracket">No bracket data yet.</div>';
 
     const finalRoundNum  = roundNums[roundNums.length - 1];
-    const nonFinalRounds = roundNums.slice(0, -1);
-    const numSide        = nonFinalRounds.length;   // columns on each side of Final
-    const totalCols      = numSide + 1 + numSide;
-    const finalColIdx    = numSide;
+    const nonFinalRounds = roundNums.slice(0, -1);  // sorted earliest→latest
+    const numSide        = nonFinalRounds.length;   // columns on each side
 
-    // ── Layout constants ─────────────────────────────────────────────────────
-    const CARD_W        = 180;
-    const CARD_H        = 72;
-    const ROW_PAD       = 16;
-    const COL_GAP       = 48;
-    const LABEL_H       = 28;
-    const MARGIN_X      = 20;
-    const MARGIN_Y      = 20;
-    const TROPHY_H      = 44;   // space reserved above Final for trophy
-    const GAP_BELOW_FINAL = 72; // vertical gap from bottom of Final card to SF centre
+    /* ── 1. Layout constants ───────────────────────────────────────────────── */
+    const CARD_W    = 188;
+    const CARD_H    = 74;
+    const ROW_PAD   = 14;   // vertical gap between cards in the same column
+    const COL_GAP   = 52;   // horizontal gap between adjacent columns
+    const LABEL_H   = 22;   // height of round label above first card
+    const MARGIN_X  = 16;
+    const MARGIN_Y  = 16;
+    const TROPHY_H  = 56;   // reserved above Final for trophy
+    const STUB_LEN  = 20;   // horizontal stub length on each connector end
+    const BADGE_R   = 9;    // badge circle radius
 
-    const baseSpacing = CARD_H + ROW_PAD;   // 88 — base slot height
+    /* depth: 0 = innermost (feeds Final), numSide-1 = outermost */
+    /* For depth d, the round has 2^d cards per side */
 
-    // X left-edge of column ci
+    /* The innermost side round has 1 card per side.
+       It must connect to the Final. We fix the Final Y so that:
+         - Trophy sits TROPHY_H above the Final card
+         - The Final card is vertically centred between the two SF cards */
+
+    /* Total vertical span of the outermost round (depth = numSide-1): */
+    const outerCount  = Math.pow(2, Math.max(numSide - 1, 0));
+    const outerSpan   = outerCount * CARD_H + (outerCount - 1) * ROW_PAD;
+
+    /* All rounds share the same total vertical span (outermost drives it) */
+    const totalSpan   = outerSpan;
+
+    const startY      = MARGIN_Y + LABEL_H;            // top of first card
+    const endY        = startY + totalSpan;             // bottom of last card
+
+    /* Final card is centred in the same vertical span */
+    const finalCardH  = CARD_H;
+    const finalY      = startY + (totalSpan - finalCardH) / 2;
+
+    /* trophy sits above Final */
+    const trophyY     = finalY - TROPHY_H + 4;
+
+    /* Total SVG height */
+    const totalH = endY + MARGIN_Y;
+
+    /* X helpers */
+    const totalCols = numSide + 1 + numSide;
     const colX = ci => MARGIN_X + ci * (CARD_W + COL_GAP);
+    const finalColIdx = numSide;
+    const totalW = MARGIN_X * 2 + totalCols * CARD_W + (totalCols - 1) * COL_GAP;
 
-    // ── Y positioning — shared-centre top-down tree ──────────────────────────
-    //
-    // Layout:
-    //   Final sits at the top (just below trophy).
-    //   All side rounds share a common vertical centre point (sfCentre) that
-    //   sits GAP_BELOW_FINAL below the bottom of the Final card.
-    //
-    //   depth 0 = the round directly feeding the Final (SF for 8-team)
-    //             → 1 card per side, centred on sfCentre
-    //   depth 1 = the round feeding depth-0 (QF for 8-team)
-    //             → 2 cards per side, spread symmetrically around sfCentre
-    //   depth d → 2^d cards per side, slot = baseSpacing × 2^d
-    //
-    //   Card top-edge at (depth d, index i within that side):
-    //     groupTop = sfCentre − (2^d / 2) × slot_d
-    //     y        = groupTop + i × slot_d + slot_d/2 − CARD_H/2
-    //
-    //   This guarantees every parent is exactly centred between its two children.
-
-    const startY    = MARGIN_Y + TROPHY_H + LABEL_H;   // below trophy and label row
-    const finalY    = startY;                           // Final card top-edge
-    const sfCentre  = finalY + CARD_H + GAP_BELOW_FINAL; // shared vertical axis
-
-    const yCard = (depth, index) => {
-      const count    = Math.pow(2, depth);
-      const slotH    = baseSpacing * Math.pow(2, depth);
-      const groupTop = sfCentre - (count / 2) * slotH;
-      return groupTop + index * slotH + slotH / 2 - CARD_H / 2;
+    /* Y centre of card at (depth, index) — evenly distributed within totalSpan */
+    const yCardTop = (depth, index) => {
+      const count  = Math.pow(2, depth);
+      const slotH  = totalSpan / count;
+      return startY + index * slotH + (slotH - CARD_H) / 2;
     };
 
-    // Total SVG height: bottom of the deepest card (outermost round) + margin
-    const maxDepth  = numSide - 1;   // ri=0 feeds Final directly, ri=numSide-1 is outermost
-    // Outermost round: depth = numSide-1, has 2^(numSide-1) cards per side
-    const outerCount = Math.pow(2, maxDepth);
-    const bottomCardY = yCard(maxDepth, outerCount - 1) + CARD_H;
-    const totalH    = Math.max(bottomCardY, finalY + CARD_H) + 40;
-    const totalW    = MARGIN_X * 2 + totalCols * CARD_W + (totalCols - 1) * COL_GAP;
-
-    // ── Helpers ───────────────────────────────────────────────────────────────
+    /* ── 2. SVG accumulator & helpers ─────────────────────────────────────── */
     const svg   = [];
     const green = '#1D9E75';
-    const greenBg = '#E6F7F1';
-
-    const rid    = v => (typeof v === 'object' ? v?.id : v) ?? null;
-    const trunc  = (s, n = 19) => s.length > n ? s.slice(0, n - 1) + '…' : s;
+    const rid   = v => (typeof v === 'object' ? v?.id : v) ?? null;
+    const trunc = (s, n = 17) => s && s.length > n ? s.slice(0, n - 1) + '…' : (s || '');
     const seedOf = id => {
       if (!id) return 0;
       return BracketPage.teams.findIndex(t => rid(t.id) === id) + 1;
     };
 
-    // ── Draw one match card ───────────────────────────────────────────────────
+    /* ── 3. Draw a single team row inside a card ─────────────────────────── */
+    const drawRow = (x, rowY, rowH, name, teamId, isWinner, rowIdx) => {
+      const isHome  = rowIdx === 0;
+      const isTBD   = !teamId;
+      const color   = isTBD
+        ? 'var(--text-tertiary,#888)'
+        : isWinner
+          ? green
+          : 'var(--text-primary,#eee)';
+      const fw      = isWinner ? '700' : '400';
+      const fi      = isTBD   ? 'italic' : 'normal';
+      const seed    = seedOf(teamId);
+      const initStr = teamInitials(name);
+      const bgCol   = badgeColor(name);
+      const cy      = rowY + rowH / 2;
+      const parts   = [];
+
+      /* winner row highlight */
+      if (isWinner) {
+        parts.push(
+          `<rect x="${x+1}" y="${rowY}" width="${CARD_W-2}" height="${rowH}"
+            rx="5" fill="${green}" fill-opacity="0.12"/>`
+        );
+      }
+
+      /* ── Seed number (default visible, hidden in .show-badges) ── */
+      if (seed > 0) {
+        parts.push(
+          `<text x="${x+13}" y="${cy}" dominant-baseline="central"
+            text-anchor="middle" font-size="9" font-weight="500"
+            fill="var(--text-tertiary,#888)" font-family="inherit"
+            class="bc-seed-num">${seed}</text>`
+        );
+      }
+
+      /* ── Badge circle + initials (hidden by default, shown in .show-badges) ── */
+      parts.push(
+        `<circle cx="${x+13}" cy="${cy}" r="${BADGE_R}"
+          fill="${bgCol}" class="bc-badge" opacity="0.9"/>`,
+        `<text x="${x+13}" y="${cy}" dominant-baseline="central"
+          text-anchor="middle" font-size="8" font-weight="700"
+          fill="#fff" font-family="inherit"
+          class="bc-badge">${escHtml(teamInitials(name))}</text>`
+      );
+
+      /* team name */
+      parts.push(
+        `<text x="${x+27}" y="${cy}" dominant-baseline="central"
+          font-size="12" font-weight="${fw}" font-style="${fi}"
+          fill="${color}" font-family="inherit">${escHtml(trunc(name))}</text>`
+      );
+
+      svg.push(parts.join(''));
+    };
+
+    /* ── 4. Draw a complete match card ───────────────────────────────────── */
     const drawCard = (x, y, fixture, label, showLabel) => {
       const hn   = fixture.expand?.home_team?.name || 'TBD';
       const an   = fixture.expand?.away_team?.name || 'TBD';
@@ -240,120 +326,104 @@ const BracketPage = {
       const wH   = done && wId && wId === hId;
       const wA   = done && wId && wId === aId;
       const noTeams = !hId && !aId;
-
-      const border = done ? green : 'var(--border-light,#555)';
-      const bw     = done ? 1.5 : 0.75;
-      const op     = noTeams ? 0.35 : 1;
-      const rowH   = (CARD_H - 1) / 2;
-      const parts  = [];
+      const border  = done ? green : 'var(--border-light,#444)';
+      const bw      = done ? 1.5 : 0.75;
+      const rowH    = (CARD_H - 1) / 2;
 
       if (showLabel) {
-        parts.push(
-          `<text x="${x + CARD_W / 2}" y="${y - 8}"
-            text-anchor="middle" font-size="9" font-weight="600"
-            letter-spacing="0.08em" fill="var(--text-tertiary,#888)"
+        svg.push(
+          `<text x="${x + CARD_W / 2}" y="${y - 7}"
+            text-anchor="middle" font-size="9" font-weight="700"
+            letter-spacing="0.10em" fill="var(--text-tertiary,#888)"
             font-family="inherit" style="text-transform:uppercase">
             ${escHtml(label)}
           </text>`
         );
       }
 
-      parts.push(
+      /* card background */
+      svg.push(
         `<rect x="${x}" y="${y}" width="${CARD_W}" height="${CARD_H}"
-          rx="8" fill="var(--bg-primary,#2a2a2a)"
-          stroke="${border}" stroke-width="${bw}" opacity="${op}"/>`
+          rx="8" fill="var(--bg-primary,#252525)"
+          stroke="${border}" stroke-width="${bw}"
+          opacity="${noTeams ? 0.3 : 1}"/>`
       );
 
-      // Home row
-      if (wH) parts.push(
-        `<rect x="${x+1}" y="${y+1}" width="${CARD_W-2}" height="${rowH-1}" rx="7" fill="${greenBg}"/>`
-      );
-      const hs = seedOf(hId);
-      if (hs > 0) parts.push(
-        `<text x="${x+11}" y="${y+rowH/2}" dominant-baseline="central"
-          text-anchor="middle" font-size="9"
-          fill="var(--text-tertiary,#888)" font-family="inherit">${hs}</text>`
-      );
-      parts.push(
-        `<text x="${x+22}" y="${y+rowH/2}" dominant-baseline="central"
-          font-size="12" font-weight="${wH ? '600' : '400'}"
-          fill="${wH ? green : !hId ? 'var(--text-tertiary,#888)' : 'var(--text-primary,#eee)'}"
-          font-family="inherit"
-          style="${!hId ? 'font-style:italic' : ''}">${escHtml(trunc(hn))}</text>`
-      );
-      if (done) parts.push(
-        `<text x="${x+CARD_W-8}" y="${y+rowH/2}" dominant-baseline="central"
-          text-anchor="end" font-size="12" font-weight="700"
-          fill="${wH ? green : 'var(--text-tertiary,#888)'}"
+      /* home row */
+      drawRow(x, y + 1, rowH - 1, hn, hId, wH, 0);
+
+      /* score — home */
+      if (done) svg.push(
+        `<text x="${x+CARD_W-9}" y="${y + rowH/2}" dominant-baseline="central"
+          text-anchor="end" font-size="13" font-weight="800"
+          fill="${wH ? green : 'var(--text-secondary,#999)'}"
           font-family="inherit">${fixture.home_score ?? ''}</text>`
       );
 
-      // Divider
-      parts.push(
-        `<line x1="${x+1}" y1="${y+rowH}" x2="${x+CARD_W-1}" y2="${y+rowH}"
-          stroke="var(--border-light,#444)" stroke-width="0.5"/>`
+      /* divider */
+      svg.push(
+        `<line x1="${x+2}" y1="${y+rowH}" x2="${x+CARD_W-2}" y2="${y+rowH}"
+          stroke="var(--border-light,#3a3a3a)" stroke-width="0.5"/>`
       );
 
-      // Away row
-      const ay = y + rowH + 1;
-      if (wA) parts.push(
-        `<rect x="${x+1}" y="${ay}" width="${CARD_W-2}" height="${rowH}" rx="7" fill="${greenBg}"/>`
-      );
-      const as_ = seedOf(aId);
-      if (as_ > 0) parts.push(
-        `<text x="${x+11}" y="${ay+rowH/2}" dominant-baseline="central"
-          text-anchor="middle" font-size="9"
-          fill="var(--text-tertiary,#888)" font-family="inherit">${as_}</text>`
-      );
-      parts.push(
-        `<text x="${x+22}" y="${ay+rowH/2}" dominant-baseline="central"
-          font-size="12" font-weight="${wA ? '600' : '400'}"
-          fill="${wA ? green : !aId ? 'var(--text-tertiary,#888)' : 'var(--text-primary,#eee)'}"
-          font-family="inherit"
-          style="${!aId ? 'font-style:italic' : ''}">${escHtml(trunc(an))}</text>`
-      );
-      if (done) parts.push(
-        `<text x="${x+CARD_W-8}" y="${ay+rowH/2}" dominant-baseline="central"
-          text-anchor="end" font-size="12" font-weight="700"
-          fill="${wA ? green : 'var(--text-tertiary,#888)'}"
+      /* away row */
+      drawRow(x, y + rowH + 1, rowH, an, aId, wA, 1);
+
+      /* score — away */
+      if (done) svg.push(
+        `<text x="${x+CARD_W-9}" y="${y + rowH + 1 + rowH/2}" dominant-baseline="central"
+          text-anchor="end" font-size="13" font-weight="800"
+          fill="${wA ? green : 'var(--text-secondary,#999)'}"
           font-family="inherit">${fixture.away_score ?? ''}</text>`
       );
-
-      svg.push(parts.join(''));
     };
 
-    // ── Connector: L-shaped elbow between two card midpoints ─────────────────
-    const drawConn = (x1, y1, x2, y2) => {
-      const midX = (x1 + x2) / 2;
+    /* ── 5. Draw an L-shaped connector ───────────────────────────────────── */
+    /* Left side: card right-edge → stub right → vertical → stub right into parent left-edge */
+    /* Right side: card left-edge → stub left → vertical → stub left into parent right-edge */
+    const drawConnLeft = (x1, midY1, x2, midY2) => {
+      /* x1 = right edge of child card, x2 = left edge of parent card */
+      const elbowX = x1 + STUB_LEN;
       svg.push(
-        `<path d="M${x1},${y1} H${midX} V${y2} H${x2}"
+        `<path d="M${x1},${midY1} H${elbowX} V${midY2} H${x2}"
           fill="none" stroke="var(--border-mid,#555)"
-          stroke-width="1" opacity="0.6"/>`
+          stroke-width="1.2" opacity="0.55"/>`
+      );
+    };
+    const drawConnRight = (x1, midY1, x2, midY2) => {
+      /* x1 = left edge of child card, x2 = right edge of parent card */
+      const elbowX = x1 - STUB_LEN;
+      svg.push(
+        `<path d="M${x1},${midY1} H${elbowX} V${midY2} H${x2}"
+          fill="none" stroke="var(--border-mid,#555)"
+          stroke-width="1.2" opacity="0.55"/>`
       );
     };
 
-    // ── Trophy above Final ────────────────────────────────────────────────────
+    /* ── 6. Trophy ───────────────────────────────────────────────────────── */
     const trophyX = colX(finalColIdx) + CARD_W / 2;
-    const trophyY = startY - TROPHY_H + 4;
     svg.push(
-      `<use href="#icon-trophy"
-        x="${trophyX - 12}" y="${trophyY}"
-        width="24" height="24"
-        stroke="${green}" fill="none"/>`
+      `<text x="${trophyX}" y="${trophyY + 20}"
+        text-anchor="middle" font-size="28"
+        font-family="inherit">🏆</text>`
     );
 
-    // ── Final card ────────────────────────────────────────────────────────────
+    /* ── 7. Final card ───────────────────────────────────────────────────── */
     const finalMatches = roundMap[finalRoundNum];
     finalMatches.forEach((m, mi) => {
-      drawCard(colX(finalColIdx), finalY + mi * (CARD_H + ROW_PAD), m, 'Final', mi === 0);
+      drawCard(
+        colX(finalColIdx),
+        finalY + mi * (CARD_H + ROW_PAD),
+        m, 'Final', mi === 0
+      );
     });
 
-    // ── Left side: top half of each non-final round ───────────────────────────
-    // ri=0 is the round directly feeding the Final (innermost, depth=0)
-    // ri=numSide-1 is the outermost round (depth=numSide-1)
+    /* ── 8. Left side — outermost round in col 0, innermost in col (numSide-1) ── */
+    /* nonFinalRounds[0] = earliest (outermost), nonFinalRounds[numSide-1] = innermost */
     nonFinalRounds.forEach((roundNum, ri) => {
-      const depth   = ri;               // 0 = innermost (SF), increases outward
-      const colIdx  = numSide - 1 - ri; // innermost is closest to Final col
+      /* ri=0 → outermost (depth = numSide-1), ri=numSide-1 → innermost (depth=0) */
+      const depth   = numSide - 1 - ri;
+      const colIdx  = ri;               /* left: col 0=outermost, col numSide-1=innermost */
       const x       = colX(colIdx);
       const allM    = roundMap[roundNum];
       const half    = Math.ceil(allM.length / 2);
@@ -361,30 +431,33 @@ const BracketPage = {
       const label   = allM[0]?.round_label || `Round ${roundNum}`;
 
       topHalf.forEach((m, mi) => {
-        const y = yCard(depth, mi);
+        const y         = yCardTop(depth, mi);
+        const cardMidY  = y + CARD_H / 2;
         drawCard(x, y, m, label, mi === 0);
 
-        // Connector to parent (next column toward Final)
+        /* connector to parent (col to the right) */
         const parentColIdx = colIdx + 1;
-        const parentX      = colX(parentColIdx);
-        let   parentY;
+        const parentX_left = colX(parentColIdx);     /* left edge of parent */
 
-        if (ri === 0) {
-          // Direct feed to Final
-          parentY = finalY + CARD_H / 2;
+        let parentMidY;
+        if (ri === numSide - 1) {
+          /* innermost — connects to Final */
+          parentMidY = finalY + CARD_H / 2;
         } else {
-          // Parent is the previous ri (depth-1), index floor(mi/2)
-          parentY = yCard(depth - 1, Math.floor(mi / 2)) + CARD_H / 2;
+          /* parent is depth-1, index floor(mi/2) */
+          const parentDepth = depth - 1;
+          parentMidY = yCardTop(parentDepth, Math.floor(mi / 2)) + CARD_H / 2;
         }
 
-        drawConn(x + CARD_W, y + CARD_H / 2, parentX, parentY);
+        drawConnLeft(x + CARD_W, cardMidY, parentX_left, parentMidY);
       });
     });
 
-    // ── Right side: bottom half, mirrored ─────────────────────────────────────
+    /* ── 9. Right side — innermost in col (numSide+1), outermost in last col ── */
     nonFinalRounds.forEach((roundNum, ri) => {
-      const depth   = ri;
-      const colIdx  = finalColIdx + 1 + ri;   // innermost is adjacent to Final
+      const depth   = numSide - 1 - ri;
+      /* right side: innermost adjacent to Final, outermost at far right */
+      const colIdx  = finalColIdx + numSide - ri;
       const x       = colX(colIdx);
       const allM    = roundMap[roundNum];
       const half    = Math.ceil(allM.length / 2);
@@ -392,27 +465,70 @@ const BracketPage = {
       const label   = allM[0]?.round_label || `Round ${roundNum}`;
 
       botHalf.forEach((m, mi) => {
-        const y = yCard(depth, mi);
+        const y        = yCardTop(depth, mi);
+        const cardMidY = y + CARD_H / 2;
         drawCard(x, y, m, label, mi === 0);
 
-        // Connector goes LEFT toward Final
-        const parentColIdx = colIdx - 1;
-        const parentRightX = colX(parentColIdx) + CARD_W;
-        let   parentY;
+        /* connector to parent (col to the left) */
+        const parentColIdx  = colIdx - 1;
+        const parentX_right = colX(parentColIdx) + CARD_W;   /* right edge of parent */
 
-        if (ri === 0) {
-          parentY = finalY + CARD_H / 2;
+        let parentMidY;
+        if (ri === numSide - 1) {
+          parentMidY = finalY + CARD_H / 2;
         } else {
-          parentY = yCard(depth - 1, Math.floor(mi / 2)) + CARD_H / 2;
+          const parentDepth = depth - 1;
+          parentMidY = yCardTop(parentDepth, Math.floor(mi / 2)) + CARD_H / 2;
         }
 
-        drawConn(x, y + CARD_H / 2, parentRightX, parentY);
+        drawConnRight(x, cardMidY, parentX_right, parentMidY);
       });
     });
 
-    // ── Wrap in zoomable container ────────────────────────────────────────────
+    /* ── 10. Build the SVG string ─────────────────────────────────────────── */
+    const svgStr = `
+      <svg width="${totalW}" height="${totalH}"
+           viewBox="0 0 ${totalW} ${totalH}"
+           xmlns="http://www.w3.org/2000/svg"
+           id="bc-svg">
+        <style>
+          /* Badge/seed toggle */
+          .bc-badge    { opacity: 0; transition: opacity 0.2s; }
+          .bc-seed-num { opacity: 1; transition: opacity 0.2s; }
+          #bc-wrap.show-badges .bc-badge    { opacity: 1; }
+          #bc-wrap.show-badges .bc-seed-num { opacity: 0; }
+        </style>
+        ${svg.join('\n')}
+      </svg>`;
+
+    /* ── 11. Tab HTML for mobile view ─────────────────────────────────────── */
+    /* Split the SVG into three viewBox sub-views for left / final / right */
+    const leftW   = numSide * (CARD_W + COL_GAP);
+    const centreW = CARD_W + COL_GAP * 2;
+    const rightW  = numSide * (CARD_W + COL_GAP);
+
+    const leftVB   = `0 0 ${leftW} ${totalH}`;
+    const centreVB = `${leftW} 0 ${centreW + CARD_W} ${totalH}`;
+    const rightVB  = `${colX(finalColIdx + 1) - COL_GAP} 0 ${rightW + COL_GAP} ${totalH}`;
+
+    /* Re-use the same SVG content in three tab panels via viewBox clipping */
+    const tabSvg = (vb, w) =>
+      `<svg width="100%" height="${totalH}" viewBox="${vb}"
+        style="max-width:${w}px" xmlns="http://www.w3.org/2000/svg"
+        preserveAspectRatio="xMidYMid meet">
+        <style>
+          .bc-badge    { opacity: 0; }
+          .bc-seed-num { opacity: 1; }
+          #bc-wrap.show-badges .bc-badge    { opacity: 1; }
+          #bc-wrap.show-badges .bc-seed-num { opacity: 0; }
+        </style>
+        ${svg.join('\n')}
+      </svg>`;
+
+    /* ── 12. Outer container with zoom + tab layout ───────────────────────── */
     return `
       <style>
+        /* ── Container ── */
         .bc-zoom-wrap {
           position      : relative;
           width         : 100%;
@@ -425,13 +541,15 @@ const BracketPage = {
           cursor        : grab;
         }
         .bc-zoom-wrap:active { cursor: grabbing; }
+
+        /* ── Zoom controls (full-bracket mode) ── */
         .bc-zoom-controls {
-          position  : absolute;
-          top       : 8px;
-          right     : 10px;
-          display   : flex;
-          gap       : 4px;
-          z-index   : 10;
+          position : absolute;
+          top      : 8px;
+          right    : 10px;
+          display  : flex;
+          gap      : 4px;
+          z-index  : 10;
         }
         .bc-zoom-btn {
           width           : 28px;
@@ -461,36 +579,105 @@ const BracketPage = {
           will-change      : transform;
           display          : inline-block;
         }
+
+        /* ── Tab bar (hidden in full-bracket mode) ── */
+        .bc-tab-bar {
+          display : none;
+        }
+        .bc-tab-btn {
+          flex            : 1;
+          padding         : 8px 0;
+          font-size       : 12px;
+          font-weight     : 600;
+          text-transform  : uppercase;
+          letter-spacing  : 0.06em;
+          border          : none;
+          background      : transparent;
+          color           : var(--text-tertiary, #888);
+          cursor          : pointer;
+          border-bottom   : 2px solid transparent;
+          transition      : color 0.15s, border-color 0.15s;
+        }
+        .bc-tab-btn.active {
+          color              : #1D9E75;
+          border-bottom-color: #1D9E75;
+        }
+        .bc-tab-panel        { display: none; overflow-x: auto; padding: 8px; }
+        .bc-tab-panel.active { display: block; }
+
+        /* ── .mobile-tabs mode: show tab bar, hide zoom controls ── */
+        #bc-wrap.mobile-tabs .bc-zoom-controls { display: none; }
+        #bc-wrap.mobile-tabs .bc-zoom-hint     { display: none; }
+        #bc-wrap.mobile-tabs .bc-tab-bar       { display: flex; border-bottom: 0.5px solid var(--border-light,#333); }
+        #bc-wrap.mobile-tabs .bc-inner         { display: none; }
+
+        /* ── Auto-switch to tabs on narrow screens ── */
+        @media (max-width: 520px) {
+          #bc-wrap .bc-zoom-controls { display: none; }
+          #bc-wrap .bc-zoom-hint     { display: none; }
+          #bc-wrap .bc-tab-bar       { display: flex; border-bottom: 0.5px solid var(--border-light,#333); }
+          #bc-wrap .bc-inner         { display: none; }
+          #bc-wrap .bc-tab-panel     { display: none; }
+          #bc-wrap .bc-tab-panel.active { display: block; }
+          #bc-wrap { cursor: default; overflow-x: hidden; }
+        }
       </style>
 
       <div class="bc-zoom-wrap" id="bc-wrap"
-           style="height:${Math.min(totalH, 560)}px; min-height:260px;">
+           style="height:${Math.min(totalH, 580)}px; min-height:280px;">
+
+        <!-- Zoom controls (full-bracket mode) -->
         <div class="bc-zoom-controls">
           <button class="bc-zoom-btn" onclick="BracketZoom.zoomIn()"  title="Zoom in">+</button>
           <button class="bc-zoom-btn" onclick="BracketZoom.zoomOut()" title="Zoom out">−</button>
-          <button class="bc-zoom-btn" onclick="BracketZoom.reset()"   title="Fit"
-                  style="font-size:11px;">⤢</button>
+          <button class="bc-zoom-btn" onclick="BracketZoom.reset()"   title="Fit" style="font-size:11px;">⤢</button>
         </div>
 
+        <!-- Full-bracket zoomable view -->
         <div class="bc-inner" id="bc-inner">
-          <svg width="${totalW}" height="${totalH}"
-               viewBox="0 0 ${totalW} ${totalH}"
-               xmlns="http://www.w3.org/2000/svg">
-            ${svg.join('\n')}
-          </svg>
+          ${svgStr}
+        </div>
+
+        <!-- Tab bar (mobile tabs mode) -->
+        <div class="bc-tab-bar" id="bc-tab-bar">
+          <button class="bc-tab-btn active" onclick="BracketTabs.show('left',this)">◀ Left</button>
+          <button class="bc-tab-btn"        onclick="BracketTabs.show('final',this)">🏆 Final</button>
+          <button class="bc-tab-btn"        onclick="BracketTabs.show('right',this)">Right ▶</button>
+        </div>
+
+        <!-- Tab panels -->
+        <div class="bc-tab-panel active" id="bc-tab-left">
+          ${tabSvg(leftVB, leftW)}
+        </div>
+        <div class="bc-tab-panel" id="bc-tab-final">
+          ${tabSvg(centreVB, centreW + CARD_W)}
+        </div>
+        <div class="bc-tab-panel" id="bc-tab-right">
+          ${tabSvg(rightVB, rightW + COL_GAP)}
         </div>
 
         <div class="bc-zoom-hint">Scroll or pinch to zoom · Drag to pan</div>
       </div>
 
       <script>
+      /* ── Tab controller ── */
+      window.BracketTabs = {
+        show(name, btn) {
+          document.querySelectorAll('.bc-tab-panel').forEach(p => p.classList.remove('active'));
+          document.querySelectorAll('.bc-tab-btn').forEach(b => b.classList.remove('active'));
+          document.getElementById('bc-tab-' + name)?.classList.add('active');
+          btn.classList.add('active');
+        },
+      };
+
+      /* ── Zoom controller (full-bracket mode) ── */
       (function() {
         if (window.BracketZoom && window.BracketZoom._active) return;
         window.BracketZoom = {
-          _active  : true,
-          scale    : 1,
-          minScale : 0.2,
-          maxScale : 3,
+          _active : true,
+          scale   : 1,
+          minScale: 0.15,
+          maxScale: 3,
           ox: 0, oy: 0,
           _drag: false, _lx: 0, _ly: 0, _pinchD: null,
           wrap: null, inner: null,
@@ -500,26 +687,22 @@ const BracketPage = {
             this.inner = document.getElementById('bc-inner');
             if (!this.wrap || !this.inner) return;
 
-            // Fit to container on load
             this.scale = this.wrap.clientWidth / ${totalW};
             this.ox = 0; this.oy = 0;
             this._apply();
 
-            // Resize → re-fit
             window.addEventListener('resize', () => {
               this.scale = this.wrap.clientWidth / ${totalW};
               this.ox = 0; this.oy = 0;
               this._apply();
             });
 
-            // Mouse wheel
             this.wrap.addEventListener('wheel', e => {
               e.preventDefault();
               const r = this.wrap.getBoundingClientRect();
               this._zoomAt(e.clientX - r.left, e.clientY - r.top, e.deltaY > 0 ? 0.85 : 1.18);
             }, { passive: false });
 
-            // Mouse drag
             this.wrap.addEventListener('mousedown', e => {
               this._drag = true; this._lx = e.clientX; this._ly = e.clientY;
             });
@@ -531,14 +714,9 @@ const BracketPage = {
             });
             window.addEventListener('mouseup', () => { this._drag = false; });
 
-            // Touch
             this.wrap.addEventListener('touchstart', e => {
-              if (e.touches.length === 2) {
-                this._pinchD = this._dist(e.touches);
-              } else {
-                this._lx = e.touches[0].clientX;
-                this._ly = e.touches[0].clientY;
-              }
+              if (e.touches.length === 2) this._pinchD = this._dist(e.touches);
+              else { this._lx = e.touches[0].clientX; this._ly = e.touches[0].clientY; }
             }, { passive: true });
 
             this.wrap.addEventListener('touchmove', e => {
@@ -565,8 +743,7 @@ const BracketPage = {
           },
 
           _dist(t) {
-            const dx = t[0].clientX - t[1].clientX;
-            const dy = t[0].clientY - t[1].clientY;
+            const dx = t[0].clientX - t[1].clientX, dy = t[0].clientY - t[1].clientY;
             return Math.sqrt(dx*dx + dy*dy);
           },
           _zoomAt(px, py, factor) {
@@ -588,7 +765,7 @@ const BracketPage = {
         };
         setTimeout(() => window.BracketZoom.init(), 60);
       })();
-      </script>`;
+      <\/script>`;
   },
 
   /* ═══════════════════════════════════════════════════════════════════════════
@@ -613,9 +790,9 @@ const BracketPage = {
         const wA   = done && m.winner === m.away_team;
         return `<div class="match-card ${done ? 'completed' : ''}">
           <span class="match-num">M${i+1}</span>
-          <span class="team-a ${wH?'winner-bold':''}">${escHtml(hn)}</span>
+          <span class="team-a ${wH?'winner-bold':''}\">${escHtml(hn)}</span>
           <span class="vs">vs</span>
-          <span class="team-b ${wA?'winner-bold':''}">${escHtml(an)}</span>
+          <span class="team-b ${wA?'winner-bold':''}\">${escHtml(an)}</span>
           ${done ? `<span class="match-score">${m.home_score} – ${m.away_score}</span>` : ''}
         </div>`;
       }).join('');
@@ -659,9 +836,9 @@ const BracketPage = {
             const done=m.status==='completed', wH=done&&m.winner===m.home_team, wA=done&&m.winner===m.away_team;
             return `<div class="match-card ${done?'completed':''}">
               <span class="match-num">M${i+1}</span>
-              <span class="team-a ${wH?'winner-bold':''}">${escHtml(hn)}</span>
+              <span class="team-a ${wH?'winner-bold':''}\">${escHtml(hn)}</span>
               <span class="vs">vs</span>
-              <span class="team-b ${wA?'winner-bold':''}">${escHtml(an)}</span>
+              <span class="team-b ${wA?'winner-bold':''}\">${escHtml(an)}</span>
               ${done?`<span class="match-score">${m.home_score} – ${m.away_score}</span>`:''}
             </div>`;
           }).join('')}

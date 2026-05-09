@@ -2,86 +2,230 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
 <title>Bracket View — Tournament Manager</title>
 <link rel="stylesheet" href="assets/css/styles.css">
 <style>
-  /* Bracket page specific print styles */
-  @media print {
-    .app-header-right,
-    .bracket-page-actions { display: none !important; }
-    body { background: #fff; }
-    .bc-match { break-inside: avoid; }
+
+  /* ============================================================
+     BADGE / SEED TOGGLE
+     .show-badges on #bc-wrap  → circles visible, seeds hidden
+     Default                   → seeds visible, circles hidden
+     ============================================================ */
+  .bc-seed-num  { opacity: 1; transition: opacity .15s; }
+  .bc-badge     { opacity: 0; transition: opacity .15s; pointer-events: none; }
+
+  .show-badges .bc-seed-num { opacity: 0; }
+  .show-badges .bc-badge    { opacity: 1; }
+
+  /* ============================================================
+     MOBILE TAB LAYOUT
+     .mobile-tabs on #bc-wrap → show tab bar, panels switch
+     ============================================================ */
+  .bc-tab-bar {
+    display         : none;
+    gap             : 6px;
+    padding         : 8px 12px 0;
+    border-bottom   : 0.5px solid var(--border-light, #333);
+    background      : var(--bg-secondary, #1e1e1e);
   }
+  .bc-tab-btn {
+    flex            : 1;
+    padding         : 7px 0;
+    font-size       : 12px;
+    font-weight     : 500;
+    text-align      : center;
+    color           : var(--text-tertiary, #888);
+    background      : none;
+    border          : none;
+    border-bottom   : 2px solid transparent;
+    cursor          : pointer;
+    font-family     : inherit;
+    margin-bottom   : -1px;
+    transition      : color .15s, border-color .15s;
+  }
+  .bc-tab-btn.active {
+    color        : var(--accent, #1D9E75);
+    border-color : var(--accent, #1D9E75);
+  }
+
+  /* Tab panels — hidden by default inside .mobile-tabs */
+  .bc-tab-panel           { display: block; }
+
+  /* When tab mode is active, only the .active panel shows */
+  .mobile-tabs .bc-tab-bar                    { display: flex; }
+  .mobile-tabs .bc-tab-panel                  { display: none; }
+  .mobile-tabs .bc-tab-panel.bc-tab-active    { display: block; }
+
+  /* ============================================================
+     AUTO-ACTIVATE TABS ON NARROW SCREENS
+     ============================================================ */
+  @media (max-width: 480px) {
+    #bc-wrap .bc-tab-bar                   { display: flex; }
+    #bc-wrap .bc-tab-panel                 { display: none; }
+    #bc-wrap .bc-tab-panel.bc-tab-active   { display: block; }
+  }
+
+  /* ============================================================
+     TOGGLE BUTTONS IN HEADER
+     ============================================================ */
+  .btn-toggle {
+    display      : inline-flex;
+    align-items  : center;
+    gap          : 5px;
+    padding      : 5px 10px;
+    font-size    : 12px;
+    font-weight  : 500;
+    border-radius: var(--radius-md, 6px);
+    border       : 0.5px solid var(--border-light, #444);
+    background   : var(--bg-secondary, #1e1e1e);
+    color        : var(--text-secondary, #bbb);
+    cursor       : pointer;
+    font-family  : inherit;
+    transition   : background .15s, color .15s, border-color .15s;
+  }
+  .btn-toggle:hover        { background: var(--bg-tertiary, #2a2a2a); color: var(--text-primary, #eee); }
+  .btn-toggle.active       { background: var(--accent, #1D9E75); color: #fff; border-color: var(--accent, #1D9E75); }
+  .btn-toggle svg          { width: 14px; height: 14px; flex-shrink: 0; }
+
+  /* ============================================================
+     PRINT
+     ============================================================ */
+  @media print {
+    .app-nav,
+    .bottom-nav,
+    .bracket-page-actions,
+    .bc-zoom-controls,
+    .bc-zoom-hint,
+    .bc-tab-bar             { display: none !important; }
+    body                    { background: #fff; }
+    .bc-match               { break-inside: avoid; }
+    .bc-zoom-wrap           { overflow: visible !important; height: auto !important; }
+    .bc-inner               { transform: none !important; }
+  }
+
 </style>
 </head>
 <body>
-  <script>
-    fetch('assets/icons.svg')
-      .then(r => r.text())
-      .then(svg => {
-        const div = document.createElement('div');
-        div.innerHTML = svg;
-        document.body.insertBefore(div.firstChild, document.body.firstChild);
-      });
-  </script>
-<!-- Top navigation bar -->
- <nav class="app-nav" id="app-nav">
-    <div class="app-nav-links">
-      <a href="index.html" class="nav-link active" id="nav-home">🏠 Home</a>
-      <a href="stats.html" class="nav-link" id="nav-stats">📊 Stats</a>
-      <a href="teams.html" class="nav-link" id="nav-teams">🏀 Teams</a>
-    </div>
-    <div id="auth-controls"></div>
-  </nav>
 
-  <!-- Bottom nav bar (mobile only) -->
-  <nav class="bottom-nav">
-    <a href="index.html" class="bottom-nav-item active">
-      <span class="nav-icon">🏠</span>Home
-    </a>
-    <a href="stats.html" class="bottom-nav-item">
-      <span class="nav-icon">📊</span>Stats
-    </a>
-    <a href="teams.html" class="bottom-nav-item">
-      <span class="nav-icon">🏀</span> Teams
-    </a>
-    <a href="login.html" class="bottom-nav-item" id="bottom-nav-auth">
-      <span class="nav-icon">👤</span>Account
-    </a>
-  </nav>
+<!-- =========================================================================
+     SVG ICON SPRITE — fetched once, injected into DOM
+     bracket.js references #icon-trophy via <use href="#icon-trophy">
+     ========================================================================= -->
+<script>
+  fetch('assets/icons.svg')
+    .then(r => r.text())
+    .then(svg => {
+      const div = document.createElement('div');
+      div.innerHTML = svg;
+      // Insert as very first child of body so all <use> refs resolve
+      document.body.insertBefore(div.firstChild, document.body.firstChild);
+    })
+    .catch(() => {}); // non-fatal — trophy falls back gracefully if icons.svg missing
+</script>
 
+<!-- =========================================================================
+     TOP NAV
+     ========================================================================= -->
+<nav class="app-nav" id="app-nav">
+  <div class="app-nav-links">
+    <a href="index.html"  class="nav-link" id="nav-home">Home</a>
+    <a href="stats.html"  class="nav-link" id="nav-stats">Stats</a>
+    <a href="teams.html"  class="nav-link" id="nav-teams">Teams</a>
+  </div>
+  <div id="auth-controls"></div>
+</nav>
+
+<!-- =========================================================================
+     BOTTOM NAV (mobile only)
+     ========================================================================= -->
+<nav class="bottom-nav">
+  <a href="index.html" class="bottom-nav-item">
+    <svg class="nav-icon" width="20" height="20"><use href="#icon-home"/></svg>
+    Home
+  </a>
+  <a href="stats.html" class="bottom-nav-item">
+    <svg class="nav-icon" width="20" height="20"><use href="#icon-stats"/></svg>
+    Stats
+  </a>
+  <a href="teams.html" class="bottom-nav-item">
+    <svg class="nav-icon" width="20" height="20"><use href="#icon-ball"/></svg>
+    Teams
+  </a>
+  <a href="login.html" class="bottom-nav-item" id="bottom-nav-auth">
+    <svg class="nav-icon" width="20" height="20"><use href="#icon-user"/></svg>
+    Account
+  </a>
+</nav>
+
+<!-- =========================================================================
+     PAGE CONTENT
+     ========================================================================= -->
 <div class="page-wrapper">
 <div class="app wide">
 
-  <!-- =====================================================================
-       BRACKET PAGE HEADER
-       ===================================================================== -->
+  <!-- BRACKET PAGE HEADER -------------------------------------------------- -->
   <div class="app-header">
     <div>
       <div class="bracket-page-title" id="bracket-title">Loading...</div>
       <div class="bracket-page-meta"  id="bracket-meta"></div>
     </div>
-    <div class="app-header-right bracket-page-actions">
+
+    <!-- Action buttons — right side of header -->
+    <div class="app-header-right bracket-page-actions"
+         style="display:flex;align-items:center;gap:8px;flex-wrap:wrap;">
+
       <span class="status-badge badge-pending" id="bracket-status">—</span>
-      <button class="btn sm ghost" onclick="BracketPage.refresh()">↻ Refresh</button>
-      <button class="btn sm ghost" onclick="BracketPage.print()">🖨 Print</button>
-      <a class="btn sm" href="index.html">← App</a>
+
+      <!-- Badge toggle -->
+      <button class="btn-toggle" id="btn-badges"
+              onclick="BracketPage.toggleBadges(); this.classList.toggle('active');"
+              title="Switch between team initials badges and seed numbers">
+        <svg width="14" height="14"><use href="#icon-user"/></svg>
+        Badges
+      </button>
+
+      <!-- Tab / full view toggle -->
+      <button class="btn-toggle" id="btn-tabs"
+              onclick="BracketPage.toggleTabs(); this.classList.toggle('active');"
+              title="Switch between tabbed mobile view and full scrollable bracket">
+        <svg width="14" height="14"><use href="#icon-bracket"/></svg>
+        Tabs
+      </button>
+
+      <button class="btn sm ghost" onclick="BracketPage.refresh()" title="Reload bracket data">
+        <svg width="14" height="14" style="vertical-align:-2px;margin-right:3px">
+          <use href="#icon-refresh"/>
+        </svg>
+        Refresh
+      </button>
+
+      <button class="btn sm ghost" onclick="BracketPage.print()" title="Print bracket">
+        <svg width="14" height="14" style="vertical-align:-2px;margin-right:3px">
+          <use href="#icon-print"/>
+        </svg>
+        Print
+      </button>
+
+      <a class="btn sm" href="index.html">
+        <svg width="12" height="12" style="vertical-align:-1px;margin-right:3px">
+          <use href="#icon-back"/>
+        </svg>
+        App
+      </a>
+
     </div>
   </div>
-  <!-- =====================================================================
-       CHAMPION BOX
-       Only shown when tournament status = completed.
-       ===================================================================== -->
+
+  <!-- CHAMPION BOX — shown only when tournament is completed --------------- -->
   <div class="champion-box" id="champion-box" style="display:none;"></div>
 
-  <!-- =====================================================================
-       BRACKET CANVAS
-       Populated by bracket.js based on tournament format.
-       ===================================================================== -->
+  <!-- BRACKET CANVAS — populated by bracket.js ---------------------------- -->
   <div id="bracket-canvas-area">
     <div class="no-bracket">
-      <span style="font-size:32px;display:block;margin-bottom:0.75rem">⏳</span>
+      <svg width="32" height="32" style="display:block;margin:0 auto 0.75rem">
+        <use href="#icon-pending"/>
+      </svg>
       Loading bracket...
     </div>
   </div>
@@ -89,8 +233,55 @@
 </div><!-- /.app -->
 </div><!-- /.page-wrapper -->
 
-<!-- Scripts -->
+<!-- =========================================================================
+     SCRIPTS
+     bracket.js references:
+       • BracketPage.toggleBadges() — defined in bracket.js
+       • BracketPage.toggleTabs()   — defined in bracket.js
+       • #bc-wrap                   — rendered inside bracket-canvas-area by bracket.js
+       • #icon-trophy               — from icons.svg sprite
+     ========================================================================= -->
 <script src="assets/js/pocketbase.umd.js"></script>
 <script src="assets/js/bracket.js"></script>
+
+<!-- Tab switching logic — works with the .mobile-tabs / .bc-tab-panel
+     structure that bracket.js injects into #bracket-canvas-area.
+     bracket.js generates:
+       #bc-wrap (the outer container)
+         .bc-tab-bar   (tab buttons: Left / Final / Right)
+         .bc-tab-panel[data-tab="left"]   ← SVG left half
+         .bc-tab-panel[data-tab="final"]  ← SVG final + trophy
+         .bc-tab-panel[data-tab="right"]  ← SVG right half
+
+     These panels and buttons are generated by bracket.js itself via the
+     tabHtml template strings. The JS below just handles click routing. -->
+<script>
+  // Activate a specific tab by name within #bc-wrap
+  function bcSwitchTab(name) {
+    const wrap = document.getElementById('bc-wrap');
+    if (!wrap) return;
+    wrap.querySelectorAll('.bc-tab-panel').forEach(p => {
+      p.classList.toggle('bc-tab-active', p.dataset.tab === name);
+    });
+    wrap.querySelectorAll('.bc-tab-btn').forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === name);
+    });
+  }
+
+  // Auto-activate first tab when bracket renders
+  document.addEventListener('DOMContentLoaded', () => {
+    // Watch for bracket to be injected, then activate the first tab
+    const observer = new MutationObserver(() => {
+      const firstPanel = document.querySelector('#bc-wrap .bc-tab-panel');
+      if (firstPanel && !document.querySelector('#bc-wrap .bc-tab-panel.bc-tab-active')) {
+        const firstName = firstPanel.dataset.tab;
+        if (firstName) bcSwitchTab(firstName);
+      }
+    });
+    const canvas = document.getElementById('bracket-canvas-area');
+    if (canvas) observer.observe(canvas, { childList: true, subtree: true });
+  });
+</script>
+
 </body>
 </html>

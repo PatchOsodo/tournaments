@@ -180,12 +180,11 @@ const Teams = {
 
         return `
           <div onclick="Teams.openProfile('${t.id}')"
-               style="display:flex;align-items:center;justify-content:space-between;
-                      padding:.7rem 1rem;border-bottom:.5px solid var(--border-light);
-                      cursor:pointer;transition:background .12s;
-                      ${isInactive ? 'opacity:.55;' : ''}"
-               onmouseover="this.style.background='var(--bg-secondary)'"
-               onmouseout="this.style.background='transparent'">
+             style="display: ${isInactive ? 'none' : 'flex'}; align-items:center; justify-content:space-between;
+                    padding:.7rem 1rem; border-bottom:.5px solid var(--border-light);
+                    cursor:pointer; transition:background .12s;"
+             onmouseover="this.style.background='var(--bg-secondary)'"
+             onmouseout="this.style.background='transparent'">
             <div>
               <div style="font-size:13px;font-weight:500;color:var(--text-primary);
                           display:flex;align-items:center;gap:8px;">

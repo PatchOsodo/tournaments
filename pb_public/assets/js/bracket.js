@@ -27,6 +27,15 @@ const CONFIG = {
 
 const pb = new PocketBase(CONFIG.API_BASE_URL);
 
+window.BracketTabs = {
+        show(name, btn) {
+          document.querySelectorAll('.bc-tab-panel').forEach(p => p.classList.remove('active'));
+          document.querySelectorAll('.bc-tab-btn').forEach(b => b.classList.remove('active'));
+          document.getElementById('bc-tab-' + name)?.classList.add('active');
+          btn.classList.add('active');
+        },
+      };
+
 const Logger = {
   debug : (m, c) => console.debug(`[DEBUG] ${m}`, c || ''),
   info  : (m, c) => console.info (`[INFO]  ${m}`, c || ''),
@@ -669,8 +678,7 @@ const BracketPage = {
           btn.classList.add('active');
         },
       };
-
-      /* ── Zoom controller (full-bracket mode) ── */
+    /* ── Zoom controller (full-bracket mode) ── */
       (function() {
         if (window.BracketZoom && window.BracketZoom._active) return;
         window.BracketZoom = {

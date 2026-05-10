@@ -180,7 +180,8 @@
       </button>
 
       <!-- Tab / full view toggle -->
-      <button class="btn-toggle" id="btn-tabs"
+      <button class="btn-toggle" id="btn-tabs" 
+              @media (min-width: 769px) {#btn-tabs { display: none; }}
               onclick="BracketPage.toggleTabs(); this.classList.toggle('active');"
               title="Switch between tabbed mobile view and full scrollable bracket">
         <svg width="14" height="14"><use href="#icon-bracket"/></svg>

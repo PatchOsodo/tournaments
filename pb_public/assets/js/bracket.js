@@ -214,7 +214,7 @@ const BracketPage = {
     const LABEL_H   = 22;   // height of round label above first card
     const MARGIN_X  = 16;
     const MARGIN_Y  = 16;
-    const TROPHY_H  = 56;   // reserved above Final for trophy
+    const TROPHY_H  = 48;   // reserved above Final for trophy
     const STUB_LEN  = 20;   // horizontal stub length on each connector end
     const BADGE_R   = 9;    // badge circle radius
 
@@ -233,7 +233,7 @@ const BracketPage = {
     /* All rounds share the same total vertical span (outermost drives it) */
     const totalSpan   = outerSpan;
 
-    const startY      = MARGIN_Y + LABEL_H;            // top of first card
+    const startY      = MARGIN_Y + TROPHY_H + LABEL_H;            // top of first card
     const endY        = startY + totalSpan;             // bottom of last card
 
     /* Final card is centred in the same vertical span */
@@ -241,7 +241,7 @@ const BracketPage = {
     const finalY      = startY + (totalSpan - finalCardH) / 2;
 
     /* trophy sits above Final */
-    const trophyY     = finalY - TROPHY_H + 4;
+    const trophyY     = MARGIN_Y;
 
     /* Total SVG height */
     const totalH = endY + MARGIN_Y;
@@ -412,7 +412,7 @@ const BracketPage = {
     /* ── 6. Trophy ───────────────────────────────────────────────────────── */
     const trophyX = colX(finalColIdx) + CARD_W / 2;
     svg.push(
-      `<text x="${trophyX}" y="${trophyY + 20}"
+      `<text x="${trophyX}" y="${trophyY + TROPHY_H - 4}"
         text-anchor="middle" font-size="28"
         font-family="inherit">🏆</text>`
     );
@@ -512,18 +512,31 @@ const BracketPage = {
 
     /* ── 11. Tab HTML for mobile view ─────────────────────────────────────── */
     /* Split the SVG into three viewBox sub-views for left / final / right */
-    const leftW   = numSide * (CARD_W + COL_GAP);
-    const centreW = CARD_W + COL_GAP * 2;
-    const rightW  = numSide * (CARD_W + COL_GAP);
+    
+    const PAD = 12;   // breathing room around card edges in each tab panel
 
-    const leftVB   = `0 0 ${leftW} ${totalH}`;
-    const centreVB = `${leftW} 0 ${centreW + CARD_W} ${totalH}`;
-    const rightVB  = `${colX(finalColIdx + 1) - COL_GAP} 0 ${rightW + COL_GAP} ${totalH}`;
+    // Left tab: from left edge of outermost left card to right edge of innermost left card
+    // Outermost left card is at colX(0), innermost left card right edge is colX(numSide-1) + CARD_W
+    // Also include the connector stub that extends rightward from the innermost card
+    const leftVB_x = colX(0) - PAD;
+    const leftVB_w = (colX(numSide - 1) + CARD_W + STUB_LEN + PAD) - leftVB_x;
+    const leftVB   = `${leftVB_x} 0 ${leftVB_w} ${totalH}`;
+
+    // Centre tab: from left edge of Final card to right edge, with padding
+    const centreVB_x = colX(finalColIdx) - PAD;
+    const centreVB_w = CARD_W + PAD * 2;
+    const centreVB   = `${centreVB_x} 0 ${centreVB_w} ${totalH}`;
+
+    // Right tab: from left edge of innermost right card (minus stub) to right edge of outermost right card
+    // Innermost right card is at colX(finalColIdx + 1), outermost is colX(finalColIdx + numSide)
+    const rightVB_x = colX(finalColIdx + 1) - STUB_LEN - PAD;
+    const rightVB_w = (colX(finalColIdx + numSide) + CARD_W + PAD) - rightVB_x;
+    const rightVB   = `${rightVB_x} 0 ${rightVB_w} ${totalH}`;
 
     /* Re-use the same SVG content in three tab panels via viewBox clipping */
-    const tabSvg = (vb, w) =>
+    const tabSvg = (vb, w, align = 'xMidYMid') =>
       `<svg width="100%" height="${totalH}" viewBox="${vb}"
-        style="max-width:${w}px" xmlns="http://www.w3.org/2000/svg"
+        style="max-width:${w}px;display:block;" xmlns="http://www.w3.org/2000/svg"
         preserveAspectRatio="xMidYMid meet">
         <style>
           .bc-badge    { opacity: 0; }
@@ -621,14 +634,21 @@ const BracketPage = {
         #bc-wrap.mobile-tabs .bc-inner         { display: none; }
 
         /* ── Auto-switch to tabs on narrow screens ── */
-        @media (max-width: 520px) {
+        @media (max-width: 768px) {
           #bc-wrap .bc-zoom-controls { display: none; }
           #bc-wrap .bc-zoom-hint     { display: none; }
           #bc-wrap .bc-tab-bar       { display: flex; border-bottom: 0.5px solid var(--border-light,#333); }
           #bc-wrap .bc-inner         { display: none; }
           #bc-wrap .bc-tab-panel     { display: none; }
           #bc-wrap .bc-tab-panel.active { display: block; }
-          #bc-wrap { cursor: default; overflow-x: hidden; }
+          #bc-wrap { cursor: default; }
+        }
+        @media (min-width: 769px) {
+          /* Desktop: always show full tree, always hide tab bar and panels */
+          #bc-wrap .bc-tab-bar    { display: none !important; }
+          #bc-wrap .bc-tab-panel  { display: none !important; }
+          #bc-wrap .bc-inner      { display: inline-block !important; }
+          #bc-wrap .bc-zoom-controls { display: flex !important; }
         }
       </style>
 
@@ -656,13 +676,13 @@ const BracketPage = {
 
         <!-- Tab panels -->
         <div class="bc-tab-panel active" id="bc-tab-left">
-          ${tabSvg(leftVB, leftW)}
+          ${tabSvg(leftVB,   leftVB_w)}
         </div>
         <div class="bc-tab-panel" id="bc-tab-final">
-          ${tabSvg(centreVB, centreW + CARD_W)}
+          ${tabSvg(centreVB, centreVB_w)}
         </div>
         <div class="bc-tab-panel" id="bc-tab-right">
-          ${tabSvg(rightVB, rightW + COL_GAP)}
+          ${tabSvg(rightVB,  rightVB_w)}
         </div>
 
         <div class="bc-zoom-hint">Scroll or pinch to zoom · Drag to pan</div>

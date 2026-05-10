@@ -180,11 +180,11 @@ const Teams = {
 
         return `
           <div onclick="Teams.openProfile('${t.id}')"
-             style="display: ${isInactive ? 'none' : 'flex'}; align-items:center; justify-content:space-between;
-                    padding:.7rem 1rem; border-bottom:.5px solid var(--border-light);
-                    cursor:pointer; transition:background .12s;"
-             onmouseover="this.style.background='var(--bg-secondary)'"
-             onmouseout="this.style.background='transparent'">
+         style="display: ${isInactive ? 'none' : 'flex'}; align-items:center; justify-content:space-between;
+                padding:.7rem 1rem; border-bottom:.5px solid var(--border-light);
+                cursor:pointer; transition:background .12s;"
+         onmouseover="this.style.background='var(--bg-secondary)'"
+         onmouseout="this.style.background='transparent'">
             <div>
               <div style="font-size:13px;font-weight:500;color:var(--text-primary);
                           display:flex;align-items:center;gap:8px;">
@@ -266,7 +266,6 @@ const Teams = {
     document.getElementById('form-error').style.display     = 'none';
 
     document.getElementById('form-name').value       = team.name       || '';
-    document.getElementById('form-club-name').value  = team.club_name  || '';
     document.getElementById('form-short-name').value = team.short_name || '';
     document.getElementById('form-home-court').value = team.home_court || '';
     document.getElementById('form-gender').value     = team.gender     || '';

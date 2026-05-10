@@ -42,6 +42,4 @@ document.addEventListener("DOMContentLoaded", () => {
         }
       });
       
-      console.log("Nav check complete. Current path detected as:", currentPath);
-      console.log("Found links:", navLinks.length);
 });

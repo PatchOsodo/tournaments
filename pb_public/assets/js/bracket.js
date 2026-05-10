@@ -536,7 +536,7 @@ const BracketPage = {
     /* Re-use the same SVG content in three tab panels via viewBox clipping */
     const tabSvg = (vb, w, align = 'xMidYMid') =>
       `<svg width="100%" height="${totalH}" viewBox="${vb}"
-        style="max-width:${w}px;display:block;" xmlns="http://www.w3.org/2000/svg"
+        style="max-width:${w}px;display:block;margin:0 auto;" xmlns="http://www.w3.org/2000/svg"
         preserveAspectRatio="xMidYMid meet">
         <style>
           .bc-badge    { opacity: 0; }
@@ -555,6 +555,7 @@ const BracketPage = {
           position      : relative;
           width         : 100%;
           overflow      : hidden;
+          box-sizing    : border-box;
           background    : var(--bg-secondary, #1e1e1e);
           border-radius : var(--radius-lg, 10px);
           border        : 0.5px solid var(--border-light, #333);
@@ -641,7 +642,8 @@ const BracketPage = {
           #bc-wrap .bc-inner         { display: none; }
           #bc-wrap .bc-tab-panel     { display: none; }
           #bc-wrap .bc-tab-panel.active { display: block; }
-          #bc-wrap { cursor: default; }
+          #bc-wrap { cursor: default; height: auto !important; min-height: 320px; }
+          #bc-wrap .bc-tab-panel svg { height: auto !important; max-height: 75vh; }
         }
         @media (min-width: 769px) {
           /* Desktop: always show full tree, always hide tab bar and panels */
@@ -653,7 +655,8 @@ const BracketPage = {
       </style>
 
       <div class="bc-zoom-wrap" id="bc-wrap"
-           style="height:${Math.min(totalH, 580)}px; min-height:280px;">
+           style="height:${Math.min(totalH, 580)}px; min-height:280px;"
+           data-total-h="${totalH}">
 
         <!-- Zoom controls (full-bracket mode) -->
         <div class="bc-zoom-controls">

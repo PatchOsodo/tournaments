@@ -678,10 +678,10 @@ const BracketPage = {
         </div>
 
         <!-- Tab panels -->
-        <div class="bc-tab-panel active" id="bc-tab-left">
+        <div class="bc-tab-panel" id="bc-tab-left">
           ${tabSvg(leftVB,   leftVB_w)}
         </div>
-        <div class="bc-tab-panel" id="bc-tab-final">
+        <div class="bc-tab-panel active" id="bc-tab-final">
           ${tabSvg(centreVB, centreVB_w)}
         </div>
         <div class="bc-tab-panel" id="bc-tab-right">

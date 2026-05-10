@@ -672,8 +672,8 @@ const BracketPage = {
 
         <!-- Tab bar (mobile tabs mode) -->
         <div class="bc-tab-bar" id="bc-tab-bar">
-          <button class="bc-tab-btn active" onclick="BracketTabs.show('left',this)">◀ Left</button>
-          <button class="bc-tab-btn"        onclick="BracketTabs.show('final',this)">🏆 Final</button>
+          <button class="bc-tab-btn" onclick="BracketTabs.show('left',this)">◀ Left</button>
+          <button class="bc-tab-btn active"        onclick="BracketTabs.show('final',this)">🏆 Final</button>
           <button class="bc-tab-btn"        onclick="BracketTabs.show('right',this)">Right ▶</button>
         </div>
 

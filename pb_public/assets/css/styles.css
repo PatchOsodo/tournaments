@@ -1025,7 +1025,6 @@ select.tournament-name-input {
 
 /* Champion display */
 .champion-box {
-  background    : linear-gradient(135deg, #1D9E75 0%, #0F6E56 100%);
   border-radius : var(--radius-lg);
   padding       : 1.5rem;
   text-align    : center;
@@ -1035,6 +1034,8 @@ select.tournament-name-input {
 .champion-box .trophy { font-size: 36px; margin-bottom: 0.5rem; }
 .champion-box h2 { font-size: 13px; font-weight: 400; opacity: 0.8; margin-bottom: 4px; }
 .champion-box .champion-name { font-size: 22px; font-weight: 600; }
+.champion-box.is-visible {animation: champion-shimmer 3s ease-in-out infinite,
+                     champion-appear 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;}
 
 /* Group stage bracket labels */
 .group-bracket-label {
@@ -1752,8 +1753,7 @@ select.tournament-name-input {
   text-align       : center;
   color            : #1a1200;
   margin-top       : 1.5rem;
-  animation        : champion-shimmer 3s ease-in-out infinite,
-                     champion-appear 0.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+  animation        : none;
   box-shadow       : 0 0 40px rgba(255, 215, 0, 0.35),
                      0 0 80px rgba(255, 215, 0, 0.12),
                      0 8px 32px rgba(0, 0, 0, 0.4);

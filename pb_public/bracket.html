@@ -89,7 +89,10 @@
     .bc-zoom-wrap           { overflow: visible !important; height: auto !important; }
     .bc-inner               { transform: none !important; }
   }
-
+  /* Add inside the <style> block in bracket.html */
+  @media (min-width: 769px) {
+    #btn-orientation { display: none; }
+  }
 </style>
 </head>
 <body>
@@ -166,11 +169,11 @@
       </button>
 
       <!-- Tab / full view toggle -->
-      <button class="btn-toggle" id="btn-tabs"
-              onclick="BracketPage.toggleTabs(); this.classList.toggle('active');"
-              title="Switch between tabbed mobile view and full scrollable bracket">
+     <button class="btn-toggle" id="btn-orientation"
+              onclick="BracketPage.toggleOrientation(); this.classList.toggle('active');"
+              title="Switch between top-down and left-right bracket layout">
         <svg width="14" height="14"><use href="#icon-bracket"/></svg>
-        Tabs
+        Horizontal
       </button>
 
       <button class="btn sm ghost" onclick="BracketPage.refresh()" title="Reload bracket data">
@@ -198,7 +201,7 @@
   </div>
 
   <!-- CHAMPION BOX — shown only when tournament is completed --------------- -->
-  <div class="champion-box" id="champion-box" style="display:none;"></div>
+  <div class="champion-box" id="champion-box" style="display:none;animation:none;"></div>
 
   <!-- BRACKET CANVAS — populated by bracket.js ---------------------------- -->
   <div id="bracket-canvas-area">

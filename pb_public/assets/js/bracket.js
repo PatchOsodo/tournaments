@@ -409,7 +409,7 @@ const BracketPage = {
           `<text x="${bx + BW/2}" y="${by + BH/2}" dominant-baseline="central"
             text-anchor="middle" font-size="9" font-weight="600"
             fill="#fff" font-family="inherit"
-            class="bc-seed-num">${seedOf(teamId) || '?'}</text>`
+            class="bc-seed-num">${escHtml(teamInitials(name)) || '?'}</text>`
         );
         /* initials — shown when badges active */
         parts.push(
@@ -435,19 +435,16 @@ const BracketPage = {
           >${escHtml(isTBD ? 'TBD' : trunc(name, 11))}</text>`
       );
 
-     /* ── score — right-aligned, winner accented ── */
-      if (isDone && score !== null && score !== undefined && score !== '') {
-        const scoreVal = Number(score);
-        if (!isNaN(scoreVal)) {
-          parts.push(
-            `<text x="${x + CARD_W - 7}" y="${slotY + TEAM_H/2}" dominant-baseline="central"
-              text-anchor="end" font-size="11" font-weight="800"
-              fill="${isWinner ? green : 'var(--text-tertiary,#666)'}"
-              font-family="inherit">${scoreVal}</text>`
-          );
-        }
+      /* ── score — right-aligned, winner accented ── */
+      if (isDone && score !== null && score !== undefined) {
+        parts.push(
+          `<text x="${x + CARD_W - 7}" y="${slotY + TEAM_H/2}" dominant-baseline="central"
+            text-anchor="end" font-size="11" font-weight="800"
+            fill="${isWinner ? green : 'var(--text-tertiary,#666)'}"
+            font-family="inherit">${score}</text>`
+        );
       }
-      
+
       svg.push(parts.join(''));
     };
 

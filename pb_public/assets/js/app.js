@@ -253,17 +253,57 @@ const App = {
         <a href="login.html" class="btn sm primary">Sign in / Register</a>`;
     }
     
-    // Sync bottom nav Account tab label
-  const bottomAuthItem = document.getElementById('bottom-nav-auth');
-  if (bottomAuthItem) {
-    const user = Auth.user();
-    bottomAuthItem.innerHTML = user
-      ? `<span class="nav-icon">👤</span>${escHtml(user.name?.split(' ')[0] || 'Account')}`
-      : `<span class="nav-icon">👤</span>Sign in`;
-    bottomAuthItem.href = user ? '#' : 'login.html';
-    if (user) bottomAuthItem.onclick = () => Auth.logout();
-    }
-  },
+    // Sync bottom nav Account tab
+    const bottomAuthItem = document.getElementById('bottom-nav-auth');
+        if (bottomAuthItem) {
+          if (user) {
+            bottomAuthItem.innerHTML = `<span class="nav-icon">👤</span>${escHtml(user.name?.split(' ')[0] || 'Account')}`;
+            bottomAuthItem.href      = '#';
+            bottomAuthItem.onclick   = (e) => {
+              e.preventDefault();
+              App._showAccountSheet();
+            };
+          } else {
+            bottomAuthItem.innerHTML = `<span class="nav-icon">👤</span>Sign in`;
+            bottomAuthItem.href      = 'login.html';
+            bottomAuthItem.onclick   = null;
+          }
+        }
+      },
+
+      _showAccountSheet() {
+        // Remove any existing sheet first
+        document.getElementById('_acct-sheet')?.remove();
+
+        const user      = Auth.user();
+        const roleLabel = { super_admin: '⚡ Super Admin', tournament_admin: '✏️ Admin', guest: '⭐ Guest' }[user?.role] || '';
+
+        const sheet = document.createElement('div');
+        sheet.id    = '_acct-sheet';
+        sheet.innerHTML = `
+          <div id="_acct-backdrop" style="position:fixed;inset:0;z-index:299;background:rgba(0,0,0,0.4);"
+               onclick="document.getElementById('_acct-sheet').remove()"></div>
+          <div style="position:fixed;bottom:60px;left:0;right:0;z-index:300;
+                      background:var(--bg-primary);border-top:0.5px solid var(--border-light);
+                      border-radius:var(--radius-lg) var(--radius-lg) 0 0;
+                      padding:1.25rem 1.5rem 1.5rem;max-width:480px;margin:0 auto;">
+            <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:4px;">
+              ${escHtml(user?.name || user?.email || '')}
+            </div>
+            <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:1.25rem;">
+              ${escHtml(user?.email || '')}
+              ${roleLabel ? `<span style="margin-left:8px;padding:2px 6px;border-radius:4px;
+                background:var(--bg-secondary);border:0.5px solid var(--border-light);">
+                ${roleLabel}</span>` : ''}
+            </div>
+            <button onclick="Auth.logout()" class="btn sm ghost"
+                    style="width:100%;justify-content:center;color:var(--danger);
+                           border-color:var(--danger);">
+              Sign out
+            </button>
+          </div>`;
+        document.body.appendChild(sheet);
+      },
 
   async toggleFavourite(tournamentId, existingFavouriteId) {
     try {

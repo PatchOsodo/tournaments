@@ -82,6 +82,47 @@ function _renderAuthBar() {
   // Show add button for admins
   const addBtn = document.getElementById('admin-add-btn');
   if (addBtn) addBtn.style.display = _Auth.isAdmin() ? '' : 'none';
+  // Sync bottom nav Account tab — teams.js
+  const bottomAuthItem = document.getElementById('bottom-nav-auth');
+      if (bottomAuthItem) {
+        const u = _Auth.user();
+        if (u) {
+          bottomAuthItem.innerHTML = `<span class="nav-icon">👤</span>${u.name?.split(' ')[0] || 'Account'}`;
+          bottomAuthItem.href      = '#';
+          bottomAuthItem.onclick   = (e) => {
+            e.preventDefault();
+            // Inline sheet — same pattern as app.js
+            document.getElementById('_acct-sheet')?.remove();
+            const roleLabel = { super_admin: '⚡ Super Admin', tournament_admin: '✏️ Admin', guest: '⭐ Guest' }[u.role] || '';
+            const sheet = document.createElement('div');
+            sheet.id    = '_acct-sheet';
+            sheet.innerHTML = `
+              <div style="position:fixed;inset:0;z-index:299;background:rgba(0,0,0,0.4);"
+                   onclick="document.getElementById('_acct-sheet').remove()"></div>
+              <div style="position:fixed;bottom:60px;left:0;right:0;z-index:300;
+                          background:var(--bg-primary);border-top:0.5px solid var(--border-light);
+                          border-radius:var(--radius-lg) var(--radius-lg) 0 0;
+                          padding:1.25rem 1.5rem 1.5rem;max-width:480px;margin:0 auto;">
+                <div style="font-size:14px;font-weight:600;color:var(--text-primary);margin-bottom:4px;">
+                  ${u.name || u.email}
+                </div>
+                <div style="font-size:11px;color:var(--text-tertiary);margin-bottom:1.25rem;">
+                  ${u.email}${roleLabel ? ` <span style="margin-left:8px;padding:2px 6px;border-radius:4px;background:var(--bg-secondary);border:0.5px solid var(--border-light);">${roleLabel}</span>` : ''}
+                </div>
+                <button onclick="pb.authStore.clear();window.location.href='login.html';"
+                        class="btn sm ghost"
+                        style="width:100%;justify-content:center;color:var(--danger);border-color:var(--danger);">
+                  Sign out
+                </button>
+              </div>`;
+            document.body.appendChild(sheet);
+          };
+        } else {
+          bottomAuthItem.innerHTML = `<span class="nav-icon">👤</span>Sign in`;
+          bottomAuthItem.href      = 'login.html';
+          bottomAuthItem.onclick   = null;
+        }
+      }
 }
 
 /* =============================================================================
@@ -147,6 +188,8 @@ const Teams = {
     const list      = document.getElementById('teams-registry-list');
 
     const filtered = _masterTeams.filter(t => {
+      if (t.active === false) return false;           // exclude inactive
+      if (!t.gender || !t.age_group) return false;   // exclude uncategorised
       const matchSearch = !search   || t.name.toLowerCase().includes(search) ||
                           (t.short_name||'').toLowerCase().includes(search);
       const matchGender = !gender   || t.gender === gender;
@@ -180,7 +223,7 @@ const Teams = {
 
         return `
           <div onclick="Teams.openProfile('${t.id}')"
-         style="display: ${isInactive ? 'none' : 'flex'}; align-items:center; justify-content:space-between;
+               style="display:flex; align-items:center; justify-content:space-between;
                 padding:.7rem 1rem; border-bottom:.5px solid var(--border-light);
                 cursor:pointer; transition:background .12s;"
          onmouseover="this.style.background='var(--bg-secondary)'"

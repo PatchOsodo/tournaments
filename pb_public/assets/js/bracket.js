@@ -82,7 +82,7 @@ const CONFIG = {
                  window.location.hostname === '127.0.0.1'
     ? 'http://127.0.0.1:8090'
     : window.location.origin,
-  VERSION : '6.0.0',
+  VERSION : '6.0.1',
 };
 
 const pb = new PocketBase(CONFIG.API_BASE_URL);

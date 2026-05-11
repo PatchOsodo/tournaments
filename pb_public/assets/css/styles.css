@@ -1,7 +1,7 @@
 /*
  * =============================================================================
  * BASKETBALL TOURNAMENT MANAGER — styles.css
- * Version : 3.0.0
+ * Version : 3.0.1
  *
  * TABLE OF CONTENTS
  * -----------------
@@ -1753,6 +1753,7 @@ select.tournament-name-input {
   text-align       : center;
   color            : #1a1200;
   margin-top       : 1.5rem;
+  margin-bottom    : 1.5rem;
   animation        : none;
   box-shadow       : 0 0 40px rgba(255, 215, 0, 0.35),
                      0 0 80px rgba(255, 215, 0, 0.12),
